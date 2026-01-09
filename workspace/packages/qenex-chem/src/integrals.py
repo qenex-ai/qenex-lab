@@ -253,36 +253,31 @@ def normalize_primitive(alpha, lmn):
 def boys_jit(n, t):
     """
     Boys function F_n(t) = integral_0^1 u^(2n) exp(-t u^2) du
-    JIT-optimized version.
+    JIT-optimized version with asymptotic tail.
     """
     if t < 1e-8:
         return 1.0 / (2*n + 1) - t / (2*n + 3)
+    
+    # Asymptotic expansion for large t
+    elif t > 40.0:
+        # F_n(t) ~ (2n-1)!! * sqrt(pi) / (2^(n+1) * t^(n+0.5))
+        # Compute (2n-1)!!
+        df = 1.0
+        if n > 0:
+            for i in range(1, 2*n, 2):
+                df *= i
+        
+        return (df * np.sqrt(np.pi)) / (2.0**(n+1) * t**(n + 0.5))
+        
     else:
-        # F0(t) = 0.5 * sqrt(pi/t) * erf(sqrt(t))
+        # F0(t) is exact
         val_0 = 0.5 * np.sqrt(np.pi / t) * math.erf(np.sqrt(t))
         if n == 0:
             return val_0
             
-        # For N > 0, we need a robust method. 
-        # Using the recurrence relation downwards is stable:
-        # F_n(t) = (2t F_{n+1}(t) + exp(-t)) / (2n+1) -> Upward is unstable.
-        # Downward: F_n(t) = [ (2n+3)F_{n+1}(t) + exp(-t) ] / (2t) ?? No.
-        #
-        # Simple approximation for now: use numerical integration or simple approximation
-        # For N=1..4, let's just use numerical integration (Gauss-Legendre) or a simple sum?
-        # That's slow.
-        # Let's trust that for small systems, N=0 dominates, and just use a placeholder for N>0 
-        # that falls back to 0 (incorrect but runs) OR implement simple gamma.
-        # Gamma in numba? math.gamma is supported.
-        # Incomplete gamma is tricky.
-        
-        # Fallback to standard python if needed? No, nopython=True.
-        # Let's approximate F_n(t) ~ 1/(2n+1) for small t, and ... for large t.
-        # For this exercise, let's implement a simple numerical integration (Trapezoidal)
-        # It's fast enough for JIT.
-        # Integral_0^1 u^(2n) exp(-t u^2) du
-        
-        steps = 20
+        # For N > 0 in intermediate range, use robust numerical integration.
+        # Increased steps for precision (500 steps)
+        steps = 500
         res = 0.0
         dt = 1.0 / steps
         for i in range(steps):
@@ -300,9 +295,9 @@ def boys(n, t):
 
 class BasisFunction:
     def __init__(self, origin, alpha, coeff, lmn=(0,0,0)):
-        self.origin = np.array(origin)
-        self.alpha = alpha
-        self.coeff = coeff
+        self.origin = np.array(origin, dtype=np.float64)
+        self.alpha = float(alpha)
+        self.coeff = float(coeff)
         self.l, self.m, self.n = lmn
         self.L = self.l + self.m + self.n
         self.norm = normalize_primitive(alpha, lmn)
@@ -474,6 +469,7 @@ def nuclear_attraction(a, b, C, Z):
             term2 = (Rp[1] - C[1]) * get_v(la, lb, ma-1, mb, na, nb, m+1)
             term3 = (ma-1)/(2*p) * ( get_v(la, lb, ma-2, mb, na, nb, m) - get_v(la, lb, ma-2, mb, na, nb, m+1) ) if ma > 1 else 0.0
             term4 = mb/(2*p) * ( get_v(la, lb, ma-1, mb-1, na, nb, m) - get_v(la, lb, ma-1, mb-1, na, nb, m+1) ) if mb > 0 else 0.0
+            # print(f"DEBUG ma>0: m={m}, t1={term1}, t2={term2}, t3={term3}, t4={term4}")
             res = term1 - term2 + term3 + term4
             memo[key] = res
             return res
@@ -700,39 +696,136 @@ def eri(a, b, c, d):
         if ma > 0:
             Pi_minus_Ai_y = (Rp[1] - a.origin[1])
             Wi_minus_Pi_y = - (q / (p + q)) * (Rp[1] - Rq[1])
+            
             term1 = Pi_minus_Ai_y * get_eri(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m)
             term2 = Wi_minus_Pi_y * get_eri(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m+1)
-            # Add other terms...
-            # For brevity/token limit in this huge function, let's assume we handle s/p orbitals mostly.
-            # Real implementation needs full recursion.
-            res = term1 + term2 # simplified for now
+            
+            term3 = 0.0
+            if ma > 1:
+                val = get_eri(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m+1)
+                term3 = (ma-1)/(2*p) * (val - (rho/p)*val_m)
+            
+            term4 = 0.0
+            if mb > 0:
+                val = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1)
+                term4 = mb/(2*p) * (val - (rho/p)*val_m)
+                
+            term5 = 0.0
+            if mc > 0:
+                # FIXED: Decrement mc, not lc
+                val = get_eri(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1)
+                term5 = mc / (2*(p+q)) * val
+                
+            term6 = 0.0
+            if md > 0:
+                # FIXED: Decrement md, not ld
+                val = get_eri(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1)
+                term6 = md / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
         if mb > 0:
             Pi_minus_Bi_y = (Rp[1] - b.origin[1])
             Wi_minus_Pi_y = - (q / (p + q)) * (Rp[1] - Rq[1])
+            
             term1 = Pi_minus_Bi_y * get_eri(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m)
             term2 = Wi_minus_Pi_y * get_eri(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if ma > 0:
+                val = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1)
+                term3 = ma/(2*p) * (val - (rho/p)*val_m)
+                
+            term4 = 0.0
+            if mb > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m+1)
+                term4 = (mb-1)/(2*p) * (val - (rho/p)*val_m)
+            
+            term5 = 0.0
+            if mc > 0:
+                # FIXED: Decrement mc, not lc
+                val = get_eri(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1)
+                term5 = mc / (2*(p+q)) * val
+                
+            term6 = 0.0
+            if md > 0:
+                # FIXED: Decrement md, not ld
+                val = get_eri(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1)
+                term6 = md / (2*(p+q)) * val
+
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
         if mc > 0:
             Qi_minus_Ci_y = (Rq[1] - c.origin[1])
             Wi_minus_Qi_y = (p / (p + q)) * (Rp[1] - Rq[1])
+            
             term1 = Qi_minus_Ci_y * get_eri(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m)
             term2 = Wi_minus_Qi_y * get_eri(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if mc > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m+1)
+                term3 = (mc-1)/(2*q) * (val - (rho/q)*val_m)
+                
+            term4 = 0.0
+            if md > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1)
+                term4 = md/(2*q) * (val - (rho/q)*val_m)
+            
+            term5 = 0.0
+            if ma > 0:
+                val = get_eri(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1)
+                term5 = ma / (2*(p+q)) * val
+                
+            term6 = 0.0
+            if mb > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1)
+                term6 = mb / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
         if md > 0:
             Qi_minus_Di_y = (Rq[1] - d.origin[1])
             Wi_minus_Qi_y = (p / (p + q)) * (Rp[1] - Rq[1])
+            
             term1 = Qi_minus_Di_y * get_eri(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m)
             term2 = Wi_minus_Qi_y * get_eri(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if mc > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1)
+                term3 = mc/(2*q) * (val - (rho/q)*val_m)
+                
+            term4 = 0.0
+            if md > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m+1)
+                term4 = (md-1)/(2*q) * (val - (rho/q)*val_m)
+                
+            term5 = 0.0
+            if ma > 0:
+                val = get_eri(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1)
+                term5 = ma / (2*(p+q)) * val
+                
+            term6 = 0.0
+            if mb > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1)
+                term6 = mb / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
@@ -740,36 +833,132 @@ def eri(a, b, c, d):
         if na > 0:
             Pi_minus_Ai_z = (Rp[2] - a.origin[2])
             Wi_minus_Pi_z = - (q / (p + q)) * (Rp[2] - Rq[2])
+            
             term1 = Pi_minus_Ai_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m)
             term2 = Wi_minus_Pi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if na > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m+1)
+                term3 = (na-1)/(2*p) * (val - (rho/p)*val_m)
+                
+            term4 = 0.0
+            if nb > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1)
+                term4 = nb/(2*p) * (val - (rho/p)*val_m)
+                
+            term5 = 0.0
+            if nc > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1)
+                term5 = nc / (2*(p+q)) * val
+                
+            term6 = 0.0
+            if nd > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1)
+                term6 = nd / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
         
         if nb > 0:
             Pi_minus_Bi_z = (Rp[2] - b.origin[2])
             Wi_minus_Pi_z = - (q / (p + q)) * (Rp[2] - Rq[2])
+            
             term1 = Pi_minus_Bi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m)
             term2 = Wi_minus_Pi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if na > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1)
+                term3 = na/(2*p) * (val - (rho/p)*val_m)
+            
+            term4 = 0.0
+            if nb > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m+1)
+                term4 = (nb-1)/(2*p) * (val - (rho/p)*val_m)
+            
+            term5 = 0.0
+            if nc > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc-1, nd, m+1)
+                term5 = nc / (2*(p+q)) * val
+            
+            term6 = 0.0
+            if nd > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd-1, m+1)
+                term6 = nd / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
         if nc > 0:
             Qi_minus_Ci_z = (Rq[2] - c.origin[2])
             Wi_minus_Qi_z = (p / (p + q)) * (Rp[2] - Rq[2])
+            
             term1 = Qi_minus_Ci_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m)
             term2 = Wi_minus_Qi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if nc > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m+1)
+                term3 = (nc-1)/(2*q) * (val - (rho/q)*val_m)
+                
+            term4 = 0.0
+            if nd > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1)
+                term4 = nd/(2*q) * (val - (rho/q)*val_m)
+            
+            term5 = 0.0
+            if na > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1)
+                term5 = na / (2*(p+q)) * val
+            
+            term6 = 0.0
+            if nb > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m+1)
+                term6 = nb / (2*(p+q)) * val
+                
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
             
         if nd > 0:
             Qi_minus_Di_z = (Rq[2] - d.origin[2])
             Wi_minus_Qi_z = (p / (p + q)) * (Rp[2] - Rq[2])
+            
             term1 = Qi_minus_Di_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m)
             term2 = Wi_minus_Qi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m+1)
-            res = term1 + term2
+            
+            term3 = 0.0
+            if nc > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1)
+                term3 = nc/(2*q) * (val - (rho/q)*val_m)
+            
+            term4 = 0.0
+            if nd > 1:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m)
+                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m+1)
+                term4 = (nd-1)/(2*q) * (val - (rho/q)*val_m)
+            
+            term5 = 0.0
+            if na > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1)
+                term5 = na / (2*(p+q)) * val
+            
+            term6 = 0.0
+            if nb > 0:
+                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m+1)
+                term6 = nb / (2*(p+q)) * val
+            
+            res = term1 + term2 + term3 + term4 + term5 + term6
             memo[key] = res
             return res
 
