@@ -8,7 +8,7 @@ define r = 2.0
 define dr = 0.01
 define learning_rate = 0.5
 define tolerance = 0.001
-define max_steps = 20
+define max_steps = 100
 
 define step = 0
 define diff = 1.0
@@ -77,7 +77,7 @@ while diff > tolerance:
         # Now gradient is dimensionless
         define grad = (E_next_scalar - E_scalar) / dr
         
-        print "Current r (Angstroms):"
+        print "Current r (Bohr):"
         print r
         print "Gradient:"
         print grad
@@ -86,7 +86,7 @@ while diff > tolerance:
         # r = r - alpha * grad
         # Scaling factor: E is ~1e-18. Gradient is ~1e-18.
         # We need change ~0.05. So Alpha should be ~5e16
-        define learning_rate_scaled = 5e16
+        define learning_rate_scaled = 0.5
         
         define change = learning_rate_scaled * grad
         define r = r - change
@@ -100,6 +100,9 @@ while diff > tolerance:
 end
 
 print "--- Optimization Complete ---"
-print "Final Bond Length (Angstroms):"
+print "Final Bond Length (Bohr):"
 print r
-print "Target was ~0.74 A"
+define r_angstrom = r * 0.529177
+print "Final Bond Length (Angstroms):"
+print r_angstrom
+print "Target was ~0.74 A (approx 1.40 Bohr)"

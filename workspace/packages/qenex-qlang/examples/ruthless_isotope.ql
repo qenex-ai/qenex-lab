@@ -19,7 +19,7 @@ define c_light = 2.9979e8 * m / s
 # We start close to the answer to focus on the precision of the frequency calculation
 define r = 0.70
 define dr = 0.005
-define learning_rate_scaled = 2e16
+define learning_rate_scaled = 2e-2
 define tolerance = 0.0001
 define max_steps = 15
 define step = 0
@@ -133,7 +133,13 @@ print nu_D2
 print "Phase 4: Checking Isotope Effect"
 
 # Theory predicts ratio should be sqrt(mu_D2 / mu_H2) = sqrt(2) approx
-define ratio = nu_H2 / nu_D2
+# FIX: Handle potential Infinity if nu_D2 is near zero/infinite due to optimization divergence
+if nu_D2 > 0:
+    define ratio = nu_H2 / nu_D2
+else:
+    define ratio = 0.0
+end
+
 define expected = sqrt(2.0)
 
 print "Calculated Ratio (H2/D2):"
@@ -144,11 +150,15 @@ print expected
 # Define error metric
 define error = ratio - expected
 define abs_error_sq = error * error
+# Ensure we take square root of the value part only if needed, or rely on QValue sqrt
 define abs_error = sqrt(abs_error_sq)
 
+print "Absolute Error:"
+print abs_error
+
+# Compare scalar values for logic
+# If infinity, assume failure
 if abs_error < 0.1:
     print "✅ SUCCESS: Isotope effect validated within tolerance."
-end
-if abs_error > 0.1:
+else:
     print "❌ FAILURE: Isotope effect deviation too high."
-end

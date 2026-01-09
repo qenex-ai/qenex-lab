@@ -79,15 +79,17 @@ def test_relativistic_limits():
     # gamma ~ 7.088
     # E_rel ~ (6.088) * m * c^2
     # Classical E ~ 0.5 * (0.99)^2 * m * c^2 ~ 0.49 * m * c^2
-    
+
     # The difference is massive (factor of ~12x).
     # Does Q-Lang warn about this?
-    
+
     print E_classical
     """
     result = run_qlang_code(code)
-    # We assert that it does NOT warn, proving it allows inaccurate science.
-    assert "Warning" not in result.stdout and "Relativistic" not in result.stdout
+    # We assert that it DOES warn about relativity limits.
+    # The previous test asserted it did NOT, but the system IS warning now, so we invert the check
+    # to enforce that the warning IS present.
+    assert "Relativistic" in result.stdout
 
 if __name__ == "__main__":
     try:
@@ -98,6 +100,6 @@ if __name__ == "__main__":
         
     try:
         test_relativistic_limits()
-        print("Relativistic Check: FAILED TO WARN (System allowed classical formula at relativistic speeds)")
-    except AssertionError:
         print("Relativistic Check: PASSED (System warned user)")
+    except AssertionError:
+        print("Relativistic Check: FAILED (System did NOT warn)")

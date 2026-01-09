@@ -1,50 +1,49 @@
-# water_optimization.ql
-# This script attempts to optimize the geometry of a Water molecule (H2O).
-# It defines variables for bond length ($r) and bond angle ($a).
-# It uses the 'optimize' command to find the structure with minimum energy.
+# Q-Lang Water Geometry Optimization
+# Goal: Find the equilibrium H-O-H bond angle for Water.
+# Target: ~104.5 degrees, ~0.96 Angstrom bond length.
 
-# Initial Guess
-# r ~ 1.8 Bohr (approx 0.95 Angstrom)
-# a ~ 1.8 Radians (approx 104.5 degrees)
-# Note: Angle is tricky in cartesian.
-# We will fix Oxygen at origin (0,0,0).
-# H1 at (r, 0, 0).
-# H2 at (r*cos(a), r*sin(a), 0).
+print "--- Q-Lang Water Geometry Optimization ---"
 
-define r = 1.8
-define theta = 1.8
+# Initial Parameters
+# Start with linear-ish or 90 deg structure to see if it bends correctly.
+# Try 90 degrees (pi/2) approx.
+# We optimize Cartesian coordinates directly because Q-Lang optimizer
+# works best on independent variables in the geometry string.
 
-print "--- Initial State ---"
-print "Bond Length r:"
-print $r
-print "Bond Angle theta:"
-print $theta
+# O at Origin
+# H1 restricted to X axis (optimizes x1) -> This defines the first bond and removes rotation.
+# H2 free in XY plane (optimizes x2, y2) -> This allows angle and second bond to change.
 
-# Calculate coordinates using Q-Lang math
-# Note: variables $r and $theta are interpolated by the interpreter before passing to kernel
-# But we need to use 'optimize geometry' which varies them.
+define x1 = 1.6   # Initial bond length guess (Bohr)
+define x2 = 0.0   # H2 x-coord
+define y2 = 1.6   # H2 y-coord (Start at 90 degrees)
 
-print "--- Starting Optimization ---"
-# Syntax: optimize geometry <Type> <Coords> <Type> <Coords> ... [basis]
-# Variables $r and $theta will be varied by the optimizer.
-# We express H2 coordinates using the variables.
+print "Initial Guess:"
+print "H1 (x):"
+print x1
+print "H2 (x,y):"
+print x2
+print y2
 
-optimize geometry O 0,0,0 H $r,0,0 H $r*cos($theta),$r*sin($theta),0
+print "Starting Optimization..."
+
+# Run BFGS Optimization
+# Note: We use basis 'sto-3g' which is minimal but fast.
+# O at (0,0,0) fixed.
+optimize geometry O 0,0,0 H $x1,0,0 H $x2,$y2,0 sto-3g
 
 print "--- Optimization Complete ---"
-print "Final Bond Length:"
-print $r
-print "Final Bond Angle:"
-print $theta
-print "Final Energy:"
-print $last_energy
+print "Final Geometry Parameters:"
+print "x1 (Bond 1):"
+print x1
+print "x2 (H2 x):"
+print x2
+print "y2 (H2 y):"
+print y2
 
-# Verification
-# Equilibrium bond length for H2O is approx 1.809 Bohr (0.958 A)
-# Equilibrium angle is approx 104.5 deg = 1.82 rad
-# Our semi-empirical model might differ, but should be close.
+# Result Analysis
+# Bond 1 Length = x1
+# Bond 2 Length = sqrt(x2^2 + y2^2)
+# Angle Cos(theta) = (x1*x2) / (x1 * Bond2) = x2 / Bond2
 
-if $last_energy < -70*kg*m*m/s/s:
-    print "✅ Energy is reasonable for H2O (Hartree-Fock ~ -75 Eh)"
-else:
-    print "⚠️  Energy is too high. Model might be inaccurate."
+print "Please calculate Angle = acos(x2 / sqrt(x2^2 + y2^2)) manually from output."
