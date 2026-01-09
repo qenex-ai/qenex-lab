@@ -249,12 +249,16 @@ class HartreeFockSolver:
         # 1. Build Hamiltonian (H_core)
         # H_ii = Site Energy (Ionization Potential)
         # H_ij = Hopping Integral (interaction strength decaying with distance)
+        # [CORRECTION] For correct STO-3G H2 energy (-1.117 Eh at 0.74A), we need better params.
+        # H atom 1s energy is exactly -0.5 Eh.
         H_core = np.zeros((N, N))
         
         # Parameters for Hydrogen-like 1s orbitals
         E_site = -0.5 # Energy of 1s electron in H atom (Hartrees)
-        Beta_0 = -1.0 # Max hopping strength
-        Decay = 1.0   # Decay factor for exponential overlap
+        
+        # [FIX] Better parametrization for Minimal Basis H2
+        # Overlap S ~ (1 + R + R^2/3)*exp(-R)
+        # Hopping H_ij = K * S_ij
         
         for i in range(N):
             H_core[i, i] = E_site
@@ -263,9 +267,17 @@ class HartreeFockSolver:
                 p2 = np.array(molecule.atoms[j][1])
                 dist = np.linalg.norm(p1 - p2)
                 
-                # Approximate hopping integral: proportional to overlap S_ij
-                # S_ij ~ exp(-dist)
-                coupling = Beta_0 * np.exp(-(dist - 0.74)) # Normalized near equilibrium
+                # [FIXED PHYSICS] STO-3G-like Overlap Approximation
+                # S(R) for 1s orbitals (Z=1)
+                # S = (1 + R + R^2/3) * exp(-R)
+                S_ij = (1.0 + dist + (dist**2)/3.0) * np.exp(-dist)
+                
+                # Resonance Integral (Hopping)
+                # Wolfsberg-Helmholtz approximation: H_ij = K * S_ij * (H_ii + H_jj) / 2
+                # K is typically 1.75
+                K = 1.75
+                avg_E = (E_site + E_site) / 2.0
+                coupling = K * S_ij * avg_E
                 
                 H_core[i, j] = coupling
                 H_core[j, i] = coupling
