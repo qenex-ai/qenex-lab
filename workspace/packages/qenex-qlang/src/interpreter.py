@@ -30,6 +30,7 @@ sys.path.append(os.path.join(packages_dir, "qenex-math", "src"))
 # [INTEROP] Import Kernels
 Molecule = None
 HartreeFockSolver = None
+CISolver = None
 ProteinFolder = None
 LatticeSimulator = None
 ProofState = None
@@ -37,7 +38,7 @@ TacticalProver = None
 
 try:
     from molecule import Molecule
-    from solver import HartreeFockSolver
+    from solver import HartreeFockSolver, CISolver
     from folding import ProteinFolder
     # [FIX] Use the OptimizedLattice which is compatible with our demos
     from optimized_lattice import OptimizedLattice as LatticeSimulator
@@ -416,9 +417,7 @@ class QLangInterpreter:
                  
                  condition = line[3:-1].strip()
                  if self._eval_condition(condition):
-                      # Enter block. We don't loop 'if', but we need to match 'end'.
-                      # We push to stack just to verify nesting, or we can just run.
-                      # Actually, 'end' handling needs to know if it terminates an IF or a WHILE.
+                      # Enter block. We push to stack so 'end' knows to just pop it.
                       control_stack.append(('if', ptr))
                       ptr += 1
                  else:
@@ -432,6 +431,26 @@ class QLangInterpreter:
                           elif l == 'end':
                               depth -= 1
                           ptr += 1
+                 continue
+
+            # --- CONTROL FLOW: ELSE ---
+            if line == 'else:':
+                 # If we hit an 'else:' during normal execution, it means the preceding 'if' WAS executed.
+                 # So we must SKIP the else block.
+                 # Check stack to verify we are in an 'if' block?
+                 # Actually, Q-Lang v1 didn't have 'else'.
+                 # Adding rudimentary 'else' support:
+                 
+                 # If we are here, the IF block finished executing. We skip to END.
+                 ptr += 1
+                 depth = 1
+                 while ptr < n and depth > 0:
+                      l = lines[ptr]
+                      if l.startswith('while ') or l.startswith('if '):
+                          depth += 1
+                      elif l == 'end':
+                          depth -= 1
+                      ptr += 1
                  continue
 
             # --- CONTROL FLOW: END ---
@@ -580,11 +599,21 @@ class QLangInterpreter:
         try:
             if domain == "chemistry":
                 # simulate chemistry C 0,0,0 O 0,0,1.2 sto-3g
-                # Parser: simulate chemistry <Atom1> <x,y,z> <Atom2> <x,y,z> ... <basis>
+                # Parser: simulate chemistry <Atom1> <x,y,z> <Atom2> <x,y,z> ... <basis> [method=CI]
                 
                 parts_data = parts[2:]
                 atoms = []
                 basis_set = "sto-3g" # Default
+                method = "RHF" # Default
+                
+                # Pre-scan for options like method=CI
+                clean_parts = []
+                for p in parts_data:
+                    if p.startswith("method="):
+                        method = p.split("=")[1]
+                    else:
+                        clean_parts.append(p)
+                parts_data = clean_parts
                 
                 i = 0
                 while i < len(parts_data):
@@ -627,7 +656,17 @@ class QLangInterpreter:
                         print(f"   [Q-Lang] Auto-adjusting spin multiplicity to {mult} for odd electron system.")
                         
                     m = Molecule(atoms, charge=0, multiplicity=mult)
-                    solver = HartreeFockSolver(basis_set=basis_set)
+                    
+                    if method == "CI" or method == "FCI":
+                        if CISolver is None:
+                            print("   [Q-Lang] Error: CI Kernel not available. Falling back to RHF.")
+                            solver = HartreeFockSolver(basis_set=basis_set)
+                        else:
+                            print(f"   [Q-Lang] Switching kernel to Configuration Interaction ({method})...")
+                            solver = CISolver(basis_set=basis_set)
+                    else:
+                        solver = HartreeFockSolver(basis_set=basis_set)
+                        
                     e_hartrees = solver.compute_energy(m)
                     
                     # [SCIENTIFIC INTEGRITY] Unit Conversion
