@@ -1,161 +1,142 @@
-# QENEX LAB - Opencode Repository Agent Guidelines
+# QENEX LAB - Agent Operational Guidelines
 
-This document is the authoritative operational manual for autonomous agents (including QENEX Sovereign Agent) operating within the `opencode` repository. This is a **Hybrid Monorepo** combining a Bun/TypeScript infrastructure with a high-performance Python scientific core.
+This document serves as the **primary instruction set** for autonomous agents (including QENEX Sovereign Agent) operating within the QENEX `workspace`. The repository follows a **Hybrid Monorepo** structure, though the current workspace primarily exposes the **Python Scientific Core**.
 
-## 1. Environment & Build System
+## 1. Project Structure & Environment
 
-### Hybrid Architecture
+### Directory Layout
 
-- **Infrastructure/UI**: TypeScript (Runtime: Bun)
-- **Scientific Core**: Python 3.12+ (Runtime: Virtual Environment)
+- `packages/qenex-bio`: Biological systems (Folding, Genomics)
+- `packages/qenex-chem`: Computational Chemistry (Hartree-Fock, Integrals)
+- `packages/qenex-physics`: Lattice models, Tensors
+- `packages/qenex-math`: Formal verification (Prover/Verifier)
+- `packages/qenex-qlang`: **Q-Lang** Interpreter & Scripts
+- `tests/`: Integration and unit tests
+- `experiments/`: Research scripts
 
-### Core Commands (Workspace Root)
+### Python Environment (Scientific Core)
 
-**TypeScript (Bun):**
+The workspace uses a pre-configured Virtual Environment.
 
-- `bun install`: Install JS dependencies
-- `bun run typecheck`: TypeScript validation (**MANDATORY** before commits)
-- `bun run test`: **DO NOT** run from root if testing specific packages.
+- **Activation**: `source venv/bin/activate` (Required for ALL python operations)
+- **Dependencies**: Listed in `requirements.txt`.
+- **Dev Tools**: `black`, `mypy`, `pytest` are pre-installed in `venv`.
 
-**Python (Science):**
+## 2. Operational Commands
 
-- `source venv/bin/activate`: **ALWAYS** activate venv before Python operations.
-- `pip install -r requirements.txt`: Install Python dependencies.
-- `black .`: Format code (PEP 8).
-- `mypy .`: Strict type checking.
+### Build & Install
 
-### Running Q-Lang Scripts
+```bash
+# Install runtime dependencies
+source venv/bin/activate && pip install -r requirements.txt
 
-The **Q-Lang Interpreter** is the primary interface for cross-domain simulations.
-
-- **Interpreter Path**: `packages/qenex-qlang/src/interpreter.py`
-- **Execution Command**:
-  ```bash
-  source venv/bin/activate && python3 packages/qenex-qlang/src/interpreter.py path/to/script.ql
-  ```
-- **Example Scripts**: Located in `packages/qenex-qlang/examples/`
-
-### Running Tests
-
-- **Run all tests**:
-  ```bash
-  source venv/bin/activate && pytest
-  ```
-- **Run a single test file**:
-  ```bash
-  source venv/bin/activate && pytest tests/test_qlang.py
-  ```
-- **Run a specific test case**:
-  ```bash
-  source venv/bin/activate && pytest tests/test_qlang.py::test_integration
-  ```
-
-## 2. Code Style & Standards
-
-### TypeScript (Infrastructure)
-
-- **Strict Typing**: No `any`. Use `unknown` with narrowing.
-- **Immutability**: `const` over `let`. No direct mutation.
-- **Naming**: `camelCase` (vars/funcs), `PascalCase` (classes/namespaces), `kebab-case` (files).
-- **Errors**: Return `Result<T, E>` types where applicable.
-
-### Python (Scientific Core)
-
-- **Style**: Follow **PEP 8** (Enforced by `black`).
-- **Typing**: **Strict Type Hints** are mandatory (checked by `mypy`).
-  ```python
-  def calculate_entropy(data: List[float]) -> float: ...
-  ```
-- **Docstrings**: Google Style docstrings for all public functions/classes.
-- **Explicit Exports**: Use `__all__` in `__init__.py` to define public API.
-
-## 3. Architecture & Patterns
-
-### Namespaces over Classes (TypeScript)
-
-Prefer TypeScript **Namespaces** for grouping related stateless functions.
-
-```typescript
-export namespace FileSystem {
-  export const read = async (path: string): Promise<string> => { ... }
-}
+# (Hybrid Mode) If package.json is populated:
+# bun install && bun run build
 ```
 
-### Dependency Injection
+### Testing
 
-- Avoid global state or singletons that cannot be reset.
-- Pass dependencies explicitly to functions/classes.
+**Crucial**: Tests are located in `tests/` and often import from `packages/`.
+Always verify imports if tests fail.
 
-## 4. Git & Version Control Protocol
+```bash
+# Run ALL tests
+source venv/bin/activate && pytest
 
-### Commit Standards (Conventional Commits)
+# Run specific test file
+source venv/bin/activate && pytest tests/test_qlang.py
 
-- `feat: description` (New features)
-- `fix: description` (Bug fixes)
-- `chore: description` (Maintenance, deps, docs)
-- `refactor: description` (Code change; no fix/feature)
-- `test: description` (Adding/correcting tests)
-
-**Rules:**
-
-- **Atomic Commits**: One logical change per commit.
-- **Descriptive**: Messages must explain _why_, not just _what_.
-
-## 5. Agent Operational Protocols
-
-### The "Trinity" Workflow
-
-1. **Reason**: Analyze the problem using high-level reasoning. Decompose into steps.
-2. **Generate**: Write the implementation (TS or Python).
-3. **Validate**: Verify using the appropriate test runner or Q-Lang simulation.
-
-### Thinking Process
-
-Before writing a single line of code:
-
-1. **Explore**: Use `ls -R` or `glob` to understand file structure.
-2. **Read**: Read relevant files completely. Don't guess APIs.
-3. **Plan**: Draft a plan. If complex, create a `TODO` list.
-4. **Communicate**: Tell the user what you are about to do.
-
-### Safety & Integrity
-
-- **Path Check**: Verify directory existence with `ls` before `write`.
-- **Read First**: Always `read` a file before `edit`.
-- **No Hallucinations**: Do not import non-existent libraries. Verify with `pip list` or `bun pm ls`.
-- **Secrets**: NEVER commit `.env` files, API keys, or credentials.
-
-### Troubleshooting Loop
-
-If a command or test fails:
-
-1. **Read Output**: Analyze the error message thoroughly.
-2. **Context**: Check environment variables/config.
-3. **Fix**: Apply a targeted fix.
-4. **Verify**: Run the verification suite again.
-
-## 6. Specialized Domains
-
-Consult these packages for domain-specific logic:
-
-- **Physics**: `packages/qenex-physics` (Lattice models, Tensor operations)
-- **Biology**: `packages/qenex-bio` (Protein folding, Genomics)
-- **Math**: `packages/qenex-math` (Provers, Verifiers)
-- **Chemistry**: `packages/qenex-chem` (Hartree-Fock, Molecular dynamics)
-- **QLang**: `packages/qenex-qlang` (The Unified Scientific Language)
-
-Agents must utilize these specialized packages for high-precision tasks rather than rewriting core logic.
-
-### Python Imports in Tests
-
-Since tests reside outside packages (`tests/`), you may need to manually append package paths if the environment is not fully installed as editable:
-
-```python
-import sys
-import os
-# Example: Adding qenex-chem to path
-sys.path.append(os.path.abspath("packages/qenex-chem/src"))
+# Run single test case (Best for TDD)
+source venv/bin/activate && pytest tests/test_qlang.py::test_integration
 ```
+
+### Code Quality (Linting & Formatting)
+
+Before committing, ensure code meets standards:
+
+```bash
+# Format Code (PEP 8)
+source venv/bin/activate && black .
+
+# Type Checking
+source venv/bin/activate && mypy packages/
+```
+
+### Q-Lang Execution
+
+The proprietary scientific language used for simulations.
+
+```bash
+source venv/bin/activate && python3 packages/qenex-qlang/src/interpreter.py packages/qenex-qlang/examples/theory_of_everything.ql
+```
+
+## 3. Code Style & Standards
+
+### Python (Strict)
+
+1.  **Type Hints**: Mandatory for function arguments and return types.
+    ```python
+    def fold_protein(sequence: str, temp: float = 300.0) -> float: ...
+    ```
+2.  **Imports**: Absolute imports preferred.
+    - `from qenex_chem.solver import SCF` (if installed)
+    - OR `from packages.qenex_chem.src.solver import SCF` (local dev)
+    - _Note_: `interpreter.py` often modifies `sys.path` to enable local imports.
+3.  **Docstrings**: Google-style docstrings for all classes and public methods.
+4.  **Error Handling**: Use specific exceptions (e.g., `ValueError` for physics violations).
+5.  **Data Classes**: Prefer `@dataclass` for structured data (e.g., Particles, Molecules).
+
+### TypeScript (If applicable)
+
+- **Strict**: No `any`. Use `unknown` or generics.
+- **Functional**: Prefer pure functions and immutability (`const`).
+- **Namespaces**: Use namespaces to group related stateless functions.
+
+## 4. The "Trinity" Agent Workflow
+
+Agents must follow this strict loop to ensure scientific rigor:
+
+1.  **REASON (Plan)**:
+    - Analyze the request.
+    - Explore files (`ls -R`, `read`).
+    - **Draft a plan** before modifying code.
+2.  **GENERATE (Act)**:
+    - Write/Edit code.
+    - **Always read** a file before editing it to avoid overwriting.
+    - Use `write` for new files, `edit` for existing.
+3.  **VALIDATE (Test)**:
+    - Run `pytest` or a specific Q-Lang script.
+    - **Never assume success**. If it fails, read the error, fix, and retry.
+    - Verify physical plausibility (e.g., Energy < 0).
+
+## 5. Git & Version Control
+
+- **Commit Format**: Conventional Commits
+  - `feat: ...` (New science/logic)
+  - `fix: ...` (Correction)
+  - `refactor: ...` (Cleanup)
+  - `test: ...` (Verification)
+- **Rules**:
+  - **Atomic**: One task per commit.
+  - **No Secrets**: Never commit `.env` or keys.
+  - **Verify First**: Do not commit broken code.
+
+## 6. Troubleshooting & Common Issues
+
+- **Import Errors**:
+  - If `ModuleNotFoundError` occurs in tests, ensure `sys.path` includes `packages/`.
+  - Tests in `tests/` usually need:
+    ```python
+    import sys, os
+    # Add packages root to path
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../packages')))
+    ```
+- **File Not Found**:
+  - Always verify paths with `ls`. `workspace` is the root.
+- **Environment**:
+  - If `python` command fails, check `source venv/bin/activate` prefix.
+- **Integrals Module**:
+  - `packages/qenex-chem/src/integrals.py` is computationally intensive. Ensure `scipy` is available.
 
 ---
 
