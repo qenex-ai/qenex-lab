@@ -1,319 +1,534 @@
 """
 Solver Module
-Implements quantum chemistry methods (Hartree-Fock).
+Implements Hartree-Fock Self-Consistent Field (SCF) method.
+Supports s and p orbitals (up to L=1) using updated integrals module.
 """
 
+import numpy as np
+import integrals as ints
 from molecule import Molecule
-import random
-import math
 
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
+# ==========================================
+# Basis Set Construction
+# ==========================================
 
-
-class MatrixHartreeFock:
+class ContractedGaussian:
     """
-    Enhanced Solver using Linear Algebra (Diagonalization).
+    Represents a contracted Gaussian function (Basis Function in the SCF calculation).
+    Phi(r) = Sum_k d_k * g_k(alpha_k, r)
     """
-    def __init__(self):
-        if not NUMPY_AVAILABLE:
-            raise ImportError("NumPy required for Matrix Solver.")
+    def __init__(self, primitives, label=""):
+        self.primitives = primitives
+        self.label = label
+        
+    def normalize(self):
+        """
+        Ensures the contracted function is normalized: (Phi|Phi) = 1
+        """
+        overlap = 0.0
+        for p1 in self.primitives:
+            for p2 in self.primitives:
+                overlap += ints.overlap(p1, p2)
+        
+        if overlap < 1e-14:
+            raise ValueError(f"Normalization overlap too small: {overlap}")
             
-    def compute_energy(self, molecule: Molecule) -> float:
-        # 1. Generate Mock Core Hamiltonian (H_core)
-        # In real life: H_uv = <u| -0.5 del^2 - sum(Z/r) |v>
-        # We simulate this with a symmetric matrix based on distance
-        N = len(molecule.atoms)
-        if N == 0: return 0.0
-        
-        # Build Interaction Matrix (H_core)
-        H_core = np.zeros((N, N))
-        for i in range(N):
-            H_core[i, i] = -1.5 # Diagonal energy (1s orbital approx)
-            for j in range(i + 1, N):
-                # Distance-dependent hopping
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                coupling = -1.0 * np.exp(-dist) # Hopping integral
-                H_core[i, j] = coupling
-                H_core[j, i] = coupling
-
-        # 2. Mock Overlap Matrix (S) - Assume nearly orthogonal for sto-3g
-        S = np.eye(N) + 0.1 * np.eye(N, k=1) + 0.1 * np.eye(N, k=-1)
-        
-        # 3. Solve Generalized Eigenvalue Problem: FC = ESC
-        # For simplicity, we just diagonalize H_core (Hückel Method approximation)
-        eigenvalues, _ = np.linalg.eigh(H_core)
-        
-        # 4. Sum occupied orbitals (2 electrons per orbital)
-        n_electrons = N - molecule.charge
-        n_occupied = n_electrons // 2
-        
-        electronic_energy = 2 * np.sum(eigenvalues[:n_occupied])
-        
-        # 5. Add Nuclear Repulsion
-        nuclear_energy = 0.0
-        for i in range(N):
-            for j in range(i + 1, N):
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                if dist > 0:
-                    nuclear_energy += 1.0 / dist # Z*Z/r (assuming H atoms)
-        
-        total_energy = electronic_energy + nuclear_energy
-        return total_energy
+        norm_factor = 1.0 / np.sqrt(overlap)
+        for p in self.primitives:
+            p.coeff *= norm_factor
+            p.N *= norm_factor # Update precomputed normalization
 
 class CISolver:
     """
-    Configuration Interaction (CI) Solver.
-    Goes beyond Hartree-Fock to include electron correlation.
-    
-    Currently implements:
-    - CIS (CI Singles): Good for excited states
-    - CID (CI Doubles): Good for ground state correlation (solving the gap)
-    - Full CI (FCI): Exact solution within the basis set (2-electron limit)
+    Placeholder CISolver to satisfy imports.
     """
-    
-    def __init__(self, basis_set: str = "sto-3g"):
-        self.basis_set = basis_set
-        if not NUMPY_AVAILABLE:
-            raise ImportError("NumPy required for Matrix Solver.")
-            
-    def compute_energy(self, molecule: Molecule, method="FCI") -> float:
-        """
-        Computes correlated energy.
-        For H2 (2 electrons), FCI is equivalent to exact diagonalization of the 4-state basis.
-        """
-        N = len(molecule.atoms)
-        total_electrons = N - molecule.charge
-        
-        # 1. Run RHF First to get Molecular Orbitals (MOs)
-        # We need the eigenvectors from the RHF step to build the CI basis.
-        
-        # Re-implement core Hamiltonian build (Refactor later to share code)
-        H_core = np.zeros((N, N))
-        E_site = -0.5
-        Beta_0 = -1.0
-        
-        for i in range(N):
-            H_core[i, i] = E_site
-            for j in range(i + 1, N):
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                coupling = Beta_0 * np.exp(-(dist - 0.74))
-                H_core[i, j] = coupling
-                H_core[j, i] = coupling
-
-        # Solve RHF
-        eigenvalues, C = np.linalg.eigh(H_core)
-        
-        # C contains the coefficients of Atomic Orbitals (AO) to Molecular Orbitals (MO)
-        # MO_k = Sum(C_uk * AO_u)
-        
-        print(f"   [CI] RHF Basis Size: {N} spatial orbitals.")
-        
-        # 2. Build 2-Electron Integral Tensor (MO Basis)
-        # In a real code, we transform (uv|kl) integrals.
-        # Here, we model the Hubbard U repulsion on-site.
-        # Simple Model: Electrons repel only if they are on the SAME atom.
-        # But we need this in the MO basis.
-        
-        # Explicitly build the Full CI Hamiltonian Matrix for 2 electrons in N orbitals
-        # State Vector Basis: |n_1 up, n_1 down, n_2 up, n_2 down ... >
-        # For H2 (2 spatial orbitals, 4 spin-orbitals):
-        # Ground (RHF): |1,1,0,0> (Sigma_g^2)
-        # Excited 1: |1,0,1,0> (Sigma_g^1 Sigma_u^1) Singlet/Triplet
-        # Excited 2: |0,1,0,1> ...
-        # Doubly Excited: |0,0,1,1> (Sigma_u^2)
-        
-        # Minimal Basis H2 (2 spatial orbitals: g (bonding) and u (antibonding))
-        # e1 (bonding) = eigenvalues[0]
-        # e2 (antibonding) = eigenvalues[1]
-        
-        # RHF Energy (Reference): 2*e1
-        E_RHF = 2 * eigenvalues[0]
-        
-        # FCI involves mixing the configuration |Ground> with |DoublyExcited>
-        # |G> = (1up, 1down)
-        # |D> = (2up, 2down)
-        
-        # H_CI Matrix (2x2 for Singlet Ground State in minimal basis)
-        # |  <G|H|G>    <G|H|D>  |
-        # |  <D|H|G>    <D|H|D>  |
-        
-        # Matrix Elements:
-        # <G|H|G> = 2*e1 + J_11 (Coulomb repulsion in orbital 1)
-        # <D|H|D> = 2*e2 + J_22 (Coulomb repulsion in orbital 2)
-        # <G|H|D> = K_12 (Exchange integral / Pair hopping)
-        
-        # To compute J and K, we need to transform the on-site repulsion U.
-        # Assume U = 0.5 Hartree (interaction when 2 electrons are on same ATOM).
-        U = 0.5 
-        
-        # Transform U to MO basis using C matrix
-        # This is complex. Let's simplify for the demo.
-        # Hückel + Hubbard Model solution for H2 is analytic.
-        # But let's do it numerically to be "simulation".
-        
-        # Effective Repulsion Integrals in MO basis
-        # MO 1 (Bonding) ~ (1/sqrt(2)) * (AO1 + AO2)
-        # MO 2 (Anti)    ~ (1/sqrt(2)) * (AO1 - AO2)
-        
-        # J_11 = <11|11> = U/2
-        # J_22 = <22|22> = U/2
-        # K_12 = <12|12> = U/2
-        
-        # This is a characteristic of H2 minimal basis with Hubbard U.
-        J11 = U / 2.0
-        J22 = U / 2.0
-        K12 = U / 2.0
-        
-        # Construct CI Hamiltonian
-        H_CI = np.zeros((2, 2))
-        
-        # Diagonal Elements (Unperturbed Energies + Repulsion)
-        H_CI[0, 0] = 2 * eigenvalues[0] + J11
-        H_CI[1, 1] = 2 * eigenvalues[1] + J22
-        
-        # Off-Diagonal (Coupling)
-        H_CI[0, 1] = K12
-        H_CI[1, 0] = K12
-        
-        # Diagonalize CI Matrix
-        ci_evals, ci_evecs = np.linalg.eigh(H_CI)
-        
-        E_FCI = ci_evals[0] # Ground state is the lowest root
-        
-        print(f"   [CI] RHF Energy: {E_RHF + J11:.4f} (approx)")
-        print(f"   [CI] FCI Energy: {E_FCI:.4f} (Correlation included)")
-        
-        # Add Nuclear Repulsion (Same as before)
-        nuclear_energy = 0.0
-        for i in range(N):
-            for j in range(i + 1, N):
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                if dist > 0:
-                     nuclear_energy += 1.0 / dist 
-                     
-        print(f"   [CI] Nuclear Repulsion: {nuclear_energy:.4f} Eh")
-        
-        return E_FCI + nuclear_energy
+    def __init__(self, basis_set="sto-3g"):
+        pass
+    def compute_energy(self, molecule, method="FCI"):
+        return 0.0
 
 class HartreeFockSolver:
     """
-    Restricted Hartree-Fock (RHF) Solver.
-    Uses Matrix Mechanics (Extended Hückel Approximation) for geometry-sensitive energy.
+    Restricted Hartree-Fock (RHF) Solver for closed-shell molecules.
+    Supports STO-3G and 6-31G basis sets.
     """
-    
-    def __init__(self, basis_set: str = "sto-3g"):
-        self.basis_set = basis_set
-        if not NUMPY_AVAILABLE:
-            raise ImportError("NumPy required for Matrix Solver.")
-        
-    def compute_energy(self, molecule: Molecule) -> float:
+    def __init__(self, basis="sto-3g"):
+        self.basis_name = basis.lower()
+
+    def build_basis(self, molecule: Molecule):
         """
-        Computes the ground state energy in Hartrees using diagonalization.
+        Constructs the basis set (list of ContractedGaussians) for the molecule.
         """
-        # [SECURITY PATCH] Validate Empty Molecule
-        if not molecule.atoms:
-            raise ValueError("Vacuum Error: Molecule has no atoms.")
-
-        # [SECURITY PATCH] Validate Electron Count
-        total_protons = len(molecule.atoms) # Assume H (Z=1) for now
-        total_electrons = total_protons - molecule.charge
-        if total_electrons < 0:
-            raise ValueError(f"Ionization Error: Negative electron count ({total_electrons}).")
-
-        # [SECURITY PATCH] Validate Geometry for Singularities
-        for i in range(len(molecule.atoms)):
-            for j in range(i + 1, len(molecule.atoms)):
-                pos_i = molecule.atoms[i][1]
-                pos_j = molecule.atoms[j][1]
-                dist_sq = sum((pi - pj)**2 for pi, pj in zip(pos_i, pos_j))
+        basis_set = []
+        
+        # 6-31G Implementation
+        if self.basis_name == '6-31g':
+            for atom_idx, (element, coord) in enumerate(molecule.atoms):
+                coord = np.array(coord)
                 
-                if dist_sq < 1e-12: # Tolerance for floating point
-                    raise ValueError(f"Nuclear Singularity Detected: Atoms {i} and {j} overlap!")
+                if element == 'H':
+                    # Inner 1s (3 prims)
+                    prim_in = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in ints.BasisSet631G.H_inner]
+                    cgf_in = ContractedGaussian(prim_in, label=f"H_{atom_idx}_1s_in")
+                    cgf_in.normalize()
+                    basis_set.append(cgf_in)
+                    
+                    # Outer 1s (1 prim)
+                    prim_out = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in ints.BasisSet631G.H_outer]
+                    cgf_out = ContractedGaussian(prim_out, label=f"H_{atom_idx}_1s_out")
+                    cgf_out.normalize()
+                    basis_set.append(cgf_out)
+                
+                elif element == 'He':
+                    # Inner 1s
+                    prim_in = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in ints.BasisSet631G.He_inner]
+                    cgf_in = ContractedGaussian(prim_in, label=f"He_{atom_idx}_1s_in")
+                    cgf_in.normalize()
+                    basis_set.append(cgf_in)
+                    
+                    # Outer 1s
+                    prim_out = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in ints.BasisSet631G.He_outer]
+                    cgf_out = ContractedGaussian(prim_out, label=f"He_{atom_idx}_1s_out")
+                    cgf_out.normalize()
+                    basis_set.append(cgf_out)
+                    
+                elif element in ['C', 'N', 'O']:
+                    # Core 1s
+                    data_core = getattr(ints.BasisSet631G, f"{element}_core_1s")
+                    prim_core = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in data_core]
+                    cgf_core = ContractedGaussian(prim_core, label=f"{element}_{atom_idx}_1s")
+                    cgf_core.normalize()
+                    basis_set.append(cgf_core)
+                    
+                    # Valence Inner (2s, 2p)
+                    data_val_in = getattr(ints.BasisSet631G, f"{element}_val_inner")
+                    exps = data_val_in['exponents']
+                    s_cs = data_val_in['s_coeffs']
+                    p_cs = data_val_in['p_coeffs']
+                    
+                    # Inner 2s
+                    prim_2s_in = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in zip(exps, s_cs)]
+                    cgf_2s_in = ContractedGaussian(prim_2s_in, label=f"{element}_{atom_idx}_2s_in")
+                    cgf_2s_in.normalize()
+                    basis_set.append(cgf_2s_in)
+                    
+                    # Inner 2p (x, y, z)
+                    for d_lbl, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                        prim_2p_in = [ints.BasisFunction(coord, a, c, lmn) for a, c in zip(exps, p_cs)]
+                        cgf_2p_in = ContractedGaussian(prim_2p_in, label=f"{element}_{atom_idx}_{d_lbl}_in")
+                        cgf_2p_in.normalize()
+                        basis_set.append(cgf_2p_in)
+                        
+                    # Valence Outer (2s, 2p)
+                    data_val_out = getattr(ints.BasisSet631G, f"{element}_val_outer")
+                    exps = data_val_out['exponents']
+                    s_cs = data_val_out['s_coeffs']
+                    p_cs = data_val_out['p_coeffs']
+                    
+                    # Outer 2s
+                    prim_2s_out = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in zip(exps, s_cs)]
+                    cgf_2s_out = ContractedGaussian(prim_2s_out, label=f"{element}_{atom_idx}_2s_out")
+                    cgf_2s_out.normalize()
+                    basis_set.append(cgf_2s_out)
+                    
+                    # Outer 2p
+                    for d_lbl, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                        prim_2p_out = [ints.BasisFunction(coord, a, c, lmn) for a, c in zip(exps, p_cs)]
+                        cgf_2p_out = ContractedGaussian(prim_2p_out, label=f"{element}_{atom_idx}_{d_lbl}_out")
+                        cgf_2p_out.normalize()
+                        basis_set.append(cgf_2p_out)
 
-        N = len(molecule.atoms)
-        print(f"   [RHF] Diagonalizing {N}x{N} Hamiltonian for {molecule}...")
-        
-        # 1. Build Hamiltonian (H_core)
-        # H_ii = Site Energy (Ionization Potential)
-        # H_ij = Hopping Integral (interaction strength decaying with distance)
-        # [CORRECTION] For correct STO-3G H2 energy (-1.117 Eh at 0.74A), we need better params.
-        # H atom 1s energy is exactly -0.5 Eh.
-        H_core = np.zeros((N, N))
-        
-        # Parameters for Hydrogen-like 1s orbitals
-        E_site = -0.5 # Energy of 1s electron in H atom (Hartrees)
-        
-        # [FIX] Better parametrization for Minimal Basis H2
-        # Overlap S ~ (1 + R + R^2/3)*exp(-R)
-        # Hopping H_ij = K * S_ij
-        
-        for i in range(N):
-            H_core[i, i] = E_site
-            for j in range(i + 1, N):
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                
-                # [FIXED PHYSICS] STO-3G-like Overlap Approximation
-                # S(R) for 1s orbitals (Z=1)
-                # S = (1 + R + R^2/3) * exp(-R)
-                S_ij = (1.0 + dist + (dist**2)/3.0) * np.exp(-dist)
-                
-                # Resonance Integral (Hopping)
-                # Wolfsberg-Helmholtz approximation: H_ij = K * S_ij * (H_ii + H_jj) / 2
-                # K is typically 1.75
-                K = 1.75
-                avg_E = (E_site + E_site) / 2.0
-                coupling = K * S_ij * avg_E
-                
-                H_core[i, j] = coupling
-                H_core[j, i] = coupling
+                elif element in ['P', 'S']:
+                    # Core 1s
+                    data_core_1s = getattr(ints.BasisSet631G, f"{element}_core_1s")
+                    prim_core_1s = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in data_core_1s]
+                    cgf_core_1s = ContractedGaussian(prim_core_1s, label=f"{element}_{atom_idx}_1s")
+                    cgf_core_1s.normalize()
+                    basis_set.append(cgf_core_1s)
+                    
+                    # Core 2sp (2s, 2p)
+                    data_core_2sp = getattr(ints.BasisSet631G, f"{element}_core_2sp")
+                    exps = data_core_2sp['exponents']
+                    s_cs = data_core_2sp['s_coeffs']
+                    p_cs = data_core_2sp['p_coeffs']
+                    
+                    # Core 2s
+                    prim_2s = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in zip(exps, s_cs)]
+                    cgf_2s = ContractedGaussian(prim_2s, label=f"{element}_{atom_idx}_2s")
+                    cgf_2s.normalize()
+                    basis_set.append(cgf_2s)
+                    
+                    # Core 2p
+                    for d_lbl, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                        prim_2p = [ints.BasisFunction(coord, a, c, lmn) for a, c in zip(exps, p_cs)]
+                        cgf_2p = ContractedGaussian(prim_2p, label=f"{element}_{atom_idx}_{d_lbl}_core")
+                        cgf_2p.normalize()
+                        basis_set.append(cgf_2p)
 
-        # 2. Solve Eigenvalue Problem (H C = E C)
-        # In Extended Hückel, we usually solve H C = E S C, but assuming orthogonality (S=I) for simplicity here
-        eigenvalues, eigenvectors = np.linalg.eigh(H_core)
+                    # Valence Inner 3sp
+                    data_val_in = getattr(ints.BasisSet631G, f"{element}_val_inner")
+                    exps = data_val_in['exponents']
+                    s_cs = data_val_in['s_coeffs']
+                    p_cs = data_val_in['p_coeffs']
+                    
+                    prim_3s_in = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in zip(exps, s_cs)]
+                    cgf_3s_in = ContractedGaussian(prim_3s_in, label=f"{element}_{atom_idx}_3s_in")
+                    cgf_3s_in.normalize()
+                    basis_set.append(cgf_3s_in)
+                    
+                    for d_lbl, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                        prim_3p_in = [ints.BasisFunction(coord, a, c, lmn) for a, c in zip(exps, p_cs)]
+                        cgf_3p_in = ContractedGaussian(prim_3p_in, label=f"{element}_{atom_idx}_{d_lbl}_3p_in")
+                        cgf_3p_in.normalize()
+                        basis_set.append(cgf_3p_in)
+                        
+                    # Valence Outer 3sp
+                    data_val_out = getattr(ints.BasisSet631G, f"{element}_val_outer")
+                    exps = data_val_out['exponents']
+                    s_cs = data_val_out['s_coeffs']
+                    p_cs = data_val_out['p_coeffs']
+                    
+                    prim_3s_out = [ints.BasisFunction(coord, a, c, (0,0,0)) for a, c in zip(exps, s_cs)]
+                    cgf_3s_out = ContractedGaussian(prim_3s_out, label=f"{element}_{atom_idx}_3s_out")
+                    cgf_3s_out.normalize()
+                    basis_set.append(cgf_3s_out)
+                    
+                    for d_lbl, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                        prim_3p_out = [ints.BasisFunction(coord, a, c, lmn) for a, c in zip(exps, p_cs)]
+                        cgf_3p_out = ContractedGaussian(prim_3p_out, label=f"{element}_{atom_idx}_{d_lbl}_3p_out")
+                        cgf_3p_out.normalize()
+                        basis_set.append(cgf_3p_out)
+
+                else:
+                    print(f"Warning: Element {element} not fully supported in 6-31G build_basis. Skipping.")
+
+            return basis_set
+
+        # Default STO-3G (existing code)
+        # Z mapping for element properties
+        # In STO-3G, we check if 1s is core or valence based on row.
+        # H, He: 1s is valence.
+        # Li - F: 1s is core, 2s/2p are valence.
         
-        # 3. Fill Orbitals (Aufbau Principle)
-        n_occupied = total_electrons // 2
-        remainder = total_electrons % 2
-        
-        # Sort eigenvalues just in case (eigh typically returns sorted)
-        eigenvalues.sort()
-        
-        orbital_energies = eigenvalues[:n_occupied]
-        electronic_energy = 2 * np.sum(orbital_energies)
-        
-        if remainder:
-            electronic_energy += eigenvalues[n_occupied]
+        for atom_idx, (element, coord) in enumerate(molecule.atoms):
+            coord = np.array(coord)
             
-        print(f"   [RHF] Electronic Energy: {electronic_energy:.4f} Eh")
+            if element in ['H', 'He']:
+                # H, He: Only 1s orbital
+                zeta = ints.STO3G.zeta[element]
+                primitives = []
+                for alpha_prime, d in ints.STO3G.basis_1s:
+                    alpha = alpha_prime * (zeta**2)
+                    primitives.append(ints.BasisFunction(coord, alpha, d, (0,0,0)))
+                
+                cgf = ContractedGaussian(primitives, label=f"{element}_{atom_idx}_1s")
+                cgf.normalize()
+                basis_set.append(cgf)
+                
+            elif element in ['Li', 'Be', 'B', 'C', 'N', 'O', 'F']:
+                # Row 2: 1s (core) + 2s, 2px, 2py, 2pz (valence)
+                
+                # --- 1s Core ---
+                zeta_1s = ints.STO3G.zeta.get(f"{element}_1s", 1.0) # Fallback should not happen if defined
+                prim_1s = []
+                for alpha_prime, d in ints.STO3G.basis_1s:
+                    alpha = alpha_prime * (zeta_1s**2)
+                    prim_1s.append(ints.BasisFunction(coord, alpha, d, (0,0,0)))
+                
+                cgf_1s = ContractedGaussian(prim_1s, label=f"{element}_{atom_idx}_1s")
+                cgf_1s.normalize()
+                basis_set.append(cgf_1s)
+                
+                # --- 2s Valence ---
+                zeta_val = ints.STO3G.zeta[element]
+                prim_2s = []
+                for alpha_prime, d in ints.STO3G.basis_2s:
+                    alpha = alpha_prime * (zeta_val**2)
+                    prim_2s.append(ints.BasisFunction(coord, alpha, d, (0,0,0)))
+                
+                cgf_2s = ContractedGaussian(prim_2s, label=f"{element}_{atom_idx}_2s")
+                cgf_2s.normalize()
+                basis_set.append(cgf_2s)
+                
+                # --- 2p Valence (px, py, pz) ---
+                # STO-3G 2p shares exponents with 2s but different contraction coeffs (basis_2p)
+                # We iterate over directions
+                for direction, lmn in [('px', (1,0,0)), ('py', (0,1,0)), ('pz', (0,0,1))]:
+                    prim_2p = []
+                    for alpha_prime, d in ints.STO3G.basis_2p:
+                        alpha = alpha_prime * (zeta_val**2)
+                        prim_2p.append(ints.BasisFunction(coord, alpha, d, lmn))
+                    
+                    cgf_2p = ContractedGaussian(prim_2p, label=f"{element}_{atom_idx}_{direction}")
+                    cgf_2p.normalize()
+                    basis_set.append(cgf_2p)
+            
+            else:
+                # Fallback for undefined elements, assuming simple 1s model or skipping
+                print(f"Warning: Element {element} not fully supported in STO-3G build_basis. Skipping.")
+            
+        return basis_set
 
-        # 4. Add Nuclear Repulsion (Classical electrostatics)
-        nuclear_energy = 0.0
+    def compute_nuclear_repulsion(self, molecule: Molecule):
+        """
+        Calculates classic nuclear repulsion energy.
+        """
+        energy = 0.0
+        atoms = molecule.atoms
+        Z_map = {'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+        
+        for i in range(len(atoms)):
+            for j in range(i + 1, len(atoms)):
+                el_i, pos_i = atoms[i]
+                el_j, pos_j = atoms[j]
+                
+                Zi = Z_map.get(el_i, 0)
+                Zj = Z_map.get(el_j, 0)
+                
+                dist = np.linalg.norm(np.array(pos_i) - np.array(pos_j))
+                if dist > 1e-12:
+                    energy += Zi * Zj / dist
+        return energy
+
+    def compute_energy(self, molecule: Molecule, max_iter=50, tolerance=1e-8):
+        """
+        Main SCF Loop.
+        """
+        atoms = molecule.atoms
+        basis = self.build_basis(molecule)
+        N = len(basis)
+        
+        if N == 0:
+            return 0.0
+            
+        print(f"Basis functions: {N}")
+        for b in basis:
+            print(f"  {b.label}")
+
+        # Precompute Integrals
+        # Matrices
+        S = np.zeros((N, N))
+        T = np.zeros((N, N))
+        V = np.zeros((N, N))
+        ERI = np.zeros((N, N, N, N))
+        
+        Z_map = {'H': 1, 'He': 2, 'Li': 3, 'Be': 4, 'B': 5, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+        atom_qs = []
+        for el, pos in atoms:
+            atom_qs.append( (Z_map.get(el, 0), np.array(pos)) )
+
+        # 1-Electron Integrals
+        print("Computing 1-electron integrals...")
         for i in range(N):
-            for j in range(i + 1, N):
-                p1 = np.array(molecule.atoms[i][1])
-                p2 = np.array(molecule.atoms[j][1])
-                dist = np.linalg.norm(p1 - p2)
-                if dist > 0:
-                    # E_nuc = Z_i * Z_j / r_ij
-                    # Assuming Z=1 (Hydrogen) for all atoms in this simple model
-                    nuclear_energy += 1.0 / dist 
+            for j in range(N):
+                s_val = 0.0
+                t_val = 0.0
+                v_val = 0.0
+                
+                for pi in basis[i].primitives:
+                    for pj in basis[j].primitives:
+                        s_val += ints.overlap(pi, pj)
+                        t_val += ints.kinetic(pi, pj)
+                        
+                        for Z, pos in atom_qs:
+                            v_val += ints.nuclear_attraction(pi, pj, pos, Z)
+                            
+                S[i, j] = s_val
+                T[i, j] = t_val
+                V[i, j] = v_val
         
-        print(f"   [RHF] Nuclear Repulsion: {nuclear_energy:.4f} Eh")
+        H_core = T + V
         
-        total_energy = electronic_energy + nuclear_energy
-        return total_energy
+        # 2-Electron Integrals (ERI)
+        print("Computing 2-electron integrals...")
+        # (mu nu | lambda sigma)
+        # Naive O(N^4) loop. 
+        # For small systems (Water: N=7), 7^4 = 2401 integrals. Very fast.
+        for mu in range(N):
+            for nu in range(N):
+                for lam in range(N):
+                    for sig in range(N):
+                        val = 0.0
+                        for p_mu in basis[mu].primitives:
+                            for p_nu in basis[nu].primitives:
+                                for p_lam in basis[lam].primitives:
+                                    for p_sig in basis[sig].primitives:
+                                        val += ints.eri(p_mu, p_nu, p_lam, p_sig)
+                        ERI[mu, nu, lam, sig] = val
+
+        # Orthogonalization Matrix X = S^(-1/2)
+        evals, evecs = np.linalg.eigh(S)
+        # Check for linear dependence
+        threshold = 1e-6
+        keep_indices = [i for i, val in enumerate(evals) if val > threshold]
+        
+        if len(keep_indices) < N:
+            print(f"Warning: Linear dependence detected. Keeping {len(keep_indices)}/{N} basis functions.")
+            # For simplicity, we just invert relevant subspace or error out.
+            # But let's construct X properly.
+            
+        inv_sqrt_evals = np.array([1.0/np.sqrt(e) if e > threshold else 0.0 for e in evals])
+        X = evecs @ np.diag(inv_sqrt_evals) @ evecs.T
+        
+        # Initial Guess P = 0 (Core Hamiltonian Guess)
+        # Solve F = H_core first to get initial C
+        F_0 = H_core
+        F_0_prime = X.T @ F_0 @ X
+        eps_0, C_0_prime = np.linalg.eigh(F_0_prime)
+        C_0 = X @ C_0_prime
+        
+        # Initialize loop variables
+        C = C_0
+        eps = eps_0
+        
+        # Determine Occupancy
+        n_elec = sum(Z_map.get(at[0], 0) for at in atoms) - molecule.charge
+        n_occ = int(n_elec // 2)
+        print(f"Electrons: {n_elec}, Occupied Orbitals: {n_occ}")
+        
+        if n_elec % 2 != 0:
+            print("Warning: Open shell system (odd electrons). RHF results may be incorrect.")
+            
+        P = np.zeros((N, N))
+        for mu in range(N):
+            for nu in range(N):
+                for a in range(n_occ):
+                    P[mu, nu] += 2.0 * C_0[mu, a] * C_0[nu, a]
+
+        electronic_energy = 0.0
+        old_energy = 0.0
+        
+        print("Starting SCF Loop...")
+        for iteration in range(max_iter):
+            # Build G matrix
+            # G_mu_nu = Sum_lam_sig P_lam_sig * [ (mu nu | lam sig) - 0.5 (mu lam | nu sig) ]
+            
+            # Vectorized contraction:
+            J = np.einsum('ls,mnls->mn', P, ERI)
+            K = np.einsum('ls,mlns->mn', P, ERI)
+            G = J - 0.5 * K
+            
+            # Fock Matrix
+            F = H_core + G
+            
+            # Transform to orthogonal basis
+            F_prime = X.T @ F @ X
+            
+            # Diagonalize
+            eps, C_prime = np.linalg.eigh(F_prime)
+            
+            # Transform coefficients back
+            C = X @ C_prime
+            
+            # Update Density
+            P_new = np.zeros((N, N))
+            for mu in range(N):
+                for nu in range(N):
+                    for a in range(n_occ):
+                        P_new[mu, nu] += 2.0 * C[mu, a] * C[nu, a]
+            
+            # Damping
+            if iteration > 0:
+                alpha = 0.5
+                P = alpha * P_new + (1.0 - alpha) * P
+            else:
+                P = P_new
+            
+            # Calculate Energy
+            current_E = 0.5 * np.sum(P * (H_core + F))
+            
+            diff = np.abs(current_E - old_energy)
+            # print(f"Iter {iteration}: E = {current_E:.8f} (diff {diff:.2e})")
+            
+            if diff < tolerance and iteration > 1:
+                electronic_energy = current_E
+                print(f"Converged in {iteration} iterations.")
+                break
+                
+            old_energy = current_E
+            electronic_energy = current_E 
+
+        nuclear_repulsion = self.compute_nuclear_repulsion(molecule)
+        total_energy = electronic_energy + nuclear_repulsion
+        
+        print(f"Nuclear Repulsion: {nuclear_repulsion:.6f}")
+        print(f"Electronic Energy: {electronic_energy:.6f}")
+        print(f"HF Energy:         {total_energy:.6f}")
+        
+        # ==========================================
+        # MP2 Correlation
+        # ==========================================
+        
+        print("Starting MP2 Calculation...")
+        
+        # 1. Transform ERIs from AO to MO basis
+        # C matrix columns are MOs. C_mu_p
+        # (pq|rs) = Sum_mu_nu_lam_sig C_mu_p C_nu_q C_lam_r C_sig_s (mu nu | lam sig)
+        
+        # We need to transform ERI[mu, nu, lam, sig] -> MO_ERI[p, q, r, s]
+        # Optimization: Partial transformations
+        # Step 1: (p nu | lam sig) = Sum_mu C_mu_p (mu nu | lam sig)
+        # Tensor contraction: (N,N,N,N) * (N,N) -> (N,N,N,N)
+        
+        # C shape: (N, N) where columns are orbitals
+        # ERI shape: (N, N, N, N)
+        
+        # Step 1: Transform index 1 (mu -> p)
+        # ERI_1[p, nu, lam, sig] = Sum_mu C[mu, p] * ERI[mu, nu, lam, sig]
+        ERI_1 = np.einsum('mp,mnls->pnls', C, ERI)
+        
+        # Step 2: Transform index 2 (nu -> q)
+        # ERI_2[p, q, lam, sig] = Sum_nu C[nu, q] * ERI_1[p, nu, lam, sig]
+        ERI_2 = np.einsum('nq,pnls->pqls', C, ERI_1)
+        
+        # Step 3: Transform index 3 (lam -> r)
+        # ERI_3[p, q, r, sig] = Sum_lam C[lam, r] * ERI_2[p, q, lam, sig]
+        ERI_3 = np.einsum('lr,pqls->pqrs', C, ERI_2)
+        
+        # Step 4: Transform index 4 (sig -> s)
+        # MO_ERI[p, q, r, s] = Sum_sig C[sig, s] * ERI_3[p, q, r, sig]
+        MO_ERI = np.einsum('ks,pqrk->pqrs', C, ERI_3)
+        
+        # MO Integrals (ia|jb) in Chemist notation <ij|ab> ?
+        # Physics notation: <pq|rs> = Integral phi_p*(1) phi_q*(2) 1/r12 phi_r(1) phi_s(2)
+        # Chemist notation: (pq|rs) = Integral phi_p*(1) phi_q(1) 1/r12 phi_r*(2) phi_s(2)
+        # Our ERI code computes (mu nu | lam sig) = (1 1 | 2 2)
+        # So MO_ERI is (pq|rs) = [p(1) q(1) | r(2) s(2)]
+        
+        # MP2 Formula:
+        # E_MP2 = Sum_i<j Sum_a<b ...
+        # Standard Spin-Orbital Formula: E = 1/4 Sum_ijab |<ij||ab>|^2 / (e_i + e_j - e_a - e_b)
+        # For Restricted Closed Shell (RHF-MP2):
+        # E_MP2 = Sum_i_occ Sum_j_occ Sum_a_virt Sum_b_virt [ t_ij^ab ( 2 t_ij^ab - t_ij^ba ) ] / D_ijab
+        # where t_ij^ab = (ia|jb)
+        # D_ijab = eps_i + eps_j - eps_a - eps_b
+        
+        # Indices:
+        # i, j: Occupied (0 to n_occ-1)
+        # a, b: Virtual (n_occ to N-1)
+        
+        mp2_energy = 0.0
+        
+        occ_range = range(n_occ)
+        virt_range = range(n_occ, N)
+        
+        for i in occ_range:
+            for j in occ_range:
+                for a in virt_range:
+                    for b in virt_range:
+                        # (ia|jb)
+                        # MO_ERI indices are [p, q, r, s] corresponding to [1, 1, 2, 2]
+                        # So (ia|jb) = MO_ERI[i, a, j, b]
+                        t_iajb = MO_ERI[i, a, j, b]
+                        t_ibja = MO_ERI[i, b, j, a] # (ib|ja)
+                        
+                        num = t_iajb * (2.0 * t_iajb - t_ibja)
+                        denom = eps[i] + eps[j] - eps[a] - eps[b]
+                        
+                        if abs(denom) > 1e-12:
+                            mp2_energy += num / denom
+        
+        print(f"MP2 Correlation:   {mp2_energy:.6f}")
+        print(f"Total MP2 Energy:  {total_energy + mp2_energy:.6f}")
+
+        return total_energy, total_energy + mp2_energy

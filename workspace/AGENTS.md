@@ -12,45 +12,43 @@ This document is the authoritative operational manual for autonomous agents (inc
 ### Core Commands (Workspace Root)
 
 **TypeScript (Bun):**
-_Note: Scripts are managed via Bun. Run `bun run` to see all available scripts._
 
-- `bun install` : Install JS dependencies
-- `bun run dev` : Start development watchers (runs opencode package)
+- `bun install`: Install JS dependencies
 - `bun run typecheck`: TypeScript validation (**MANDATORY** before commits)
-- `bun run test`: **DO NOT** run from root. See testing protocols below.
+- `bun run test`: **DO NOT** run from root if testing specific packages.
 
 **Python (Science):**
 
-- `source venv/bin/activate`: **ALWAYS** activate venv before Python operations
-- `pip install -r requirements.txt`: Install Python dependencies (numpy, pytest)
-- `black .` : Format code (PEP 8)
-- `mypy .` : Strict type checking
+- `source venv/bin/activate`: **ALWAYS** activate venv before Python operations.
+- `pip install -r requirements.txt`: Install Python dependencies.
+- `black .`: Format code (PEP 8).
+- `mypy .`: Strict type checking.
 
-### Testing Protocols
+### Running Q-Lang Scripts
 
-**TypeScript (Bun Test):**
-_Navigate to specific package first (e.g., `packages/opencode` if it exists)_
+The **Q-Lang Interpreter** is the primary interface for cross-domain simulations.
 
-- **Run All**: `bun test`
-- **Single File**: `bun test <path-to-file>`
-- **Watch**: `bun test --watch`
+- **Interpreter Path**: `packages/qenex-qlang/src/interpreter.py`
+- **Execution Command**:
+  ```bash
+  source venv/bin/activate && python3 packages/qenex-qlang/src/interpreter.py path/to/script.ql
+  ```
+- **Example Scripts**: Located in `packages/qenex-qlang/examples/`
 
-**Python (Pytest):**
-_Tests are primarily located in the `tests/` directory._
+### Running Tests
 
-- **Activate Env**: `source venv/bin/activate`
-- **Run All**: `pytest tests/`
-- **Single File**: `pytest tests/optimization_test.py`
-- **Specific Test**: `pytest tests/optimization_test.py::test_function_name`
-
-**Important Note on Python Imports**:
-Some tests manually append package paths. If creating new tests, ensure proper path handling:
-
-```python
-import sys
-import os
-sys.path.append(os.path.abspath("packages/qenex-chem/src"))
-```
+- **Run all tests**:
+  ```bash
+  source venv/bin/activate && pytest
+  ```
+- **Run a single test file**:
+  ```bash
+  source venv/bin/activate && pytest tests/test_qlang.py
+  ```
+- **Run a specific test case**:
+  ```bash
+  source venv/bin/activate && pytest tests/test_qlang.py::test_integration
+  ```
 
 ## 2. Code Style & Standards
 
@@ -58,18 +56,12 @@ sys.path.append(os.path.abspath("packages/qenex-chem/src"))
 
 - **Strict Typing**: No `any`. Use `unknown` with narrowing.
 - **Immutability**: `const` over `let`. No direct mutation.
-- **Imports**: Use path aliases if available. Group external vs internal.
+- **Naming**: `camelCase` (vars/funcs), `PascalCase` (classes/namespaces), `kebab-case` (files).
 - **Errors**: Return `Result<T, E>` types where applicable.
-- **Logging**: Avoid `console.log` in production code.
-- **Naming**:
-  - Variables/Functions: `camelCase`
-  - Classes/Namespaces: `PascalCase`
-  - Files: `kebab-case`
-  - Constants: `UPPER_SNAKE_CASE`
 
 ### Python (Scientific Core)
 
-- **Style**: Follow **PEP 8**. Enforced by `black`.
+- **Style**: Follow **PEP 8** (Enforced by `black`).
 - **Typing**: **Strict Type Hints** are mandatory (checked by `mypy`).
   ```python
   def calculate_entropy(data: List[float]) -> float: ...
@@ -91,14 +83,8 @@ export namespace FileSystem {
 
 ### Dependency Injection
 
-- Avoid global state or singletons that cannot be reset between tests.
-- Pass dependencies explicitly to functions/classes to ensure testability.
-
-### Error Handling
-
-- Handle errors explicitly.
-- In TypeScript, consider using result patterns or typed error handling.
-- In Python, raise specific exceptions.
+- Avoid global state or singletons that cannot be reset.
+- Pass dependencies explicitly to functions/classes.
 
 ## 4. Git & Version Control Protocol
 
@@ -107,8 +93,8 @@ export namespace FileSystem {
 - `feat: description` (New features)
 - `fix: description` (Bug fixes)
 - `chore: description` (Maintenance, deps, docs)
-- `refactor: description` (Code change that neither fixes a bug nor adds a feature)
-- `test: description` (Adding missing tests or correcting existing tests)
+- `refactor: description` (Code change; no fix/feature)
+- `test: description` (Adding/correcting tests)
 
 **Rules:**
 
@@ -121,13 +107,13 @@ export namespace FileSystem {
 
 1. **Reason**: Analyze the problem using high-level reasoning. Decompose into steps.
 2. **Generate**: Write the implementation (TS or Python).
-3. **Validate**: Verify using the appropriate test runner (Bun Test or Pytest).
+3. **Validate**: Verify using the appropriate test runner or Q-Lang simulation.
 
 ### Thinking Process
 
 Before writing a single line of code:
 
-1. **Explore**: Use `ls -R` or `glob` to understand the file structure.
+1. **Explore**: Use `ls -R` or `glob` to understand file structure.
 2. **Read**: Read relevant files completely. Don't guess APIs.
 3. **Plan**: Draft a plan. If complex, create a `TODO` list.
 4. **Communicate**: Tell the user what you are about to do.
@@ -135,7 +121,7 @@ Before writing a single line of code:
 ### Safety & Integrity
 
 - **Path Check**: Verify directory existence with `ls` before `write`.
-- **Read First**: Always `read` a file before `edit` to ensure context.
+- **Read First**: Always `read` a file before `edit`.
 - **No Hallucinations**: Do not import non-existent libraries. Verify with `pip list` or `bun pm ls`.
 - **Secrets**: NEVER commit `.env` files, API keys, or credentials.
 
@@ -144,29 +130,33 @@ Before writing a single line of code:
 If a command or test fails:
 
 1. **Read Output**: Analyze the error message thoroughly.
-2. **Context**: Check environment variables or configuration files.
-3. **Isolate**: Create a minimal reproduction if possible.
-4. **Fix**: Apply a targeted fix.
-5. **Verify**: Run the verification suite again.
+2. **Context**: Check environment variables/config.
+3. **Fix**: Apply a targeted fix.
+4. **Verify**: Run the verification suite again.
 
-## 6. AI Interaction Rules
+## 6. Specialized Domains
 
-- **Context is King**: When editing, read the _entire_ relevant module to understand local conventions.
-- **Atomic Edits**: Focus on one logical change at a time.
-- **Self-Correction**: If a build command fails, read the _entire_ error log before attempting a fix.
+Consult these packages for domain-specific logic:
 
-## 7. Specialized Domains
+- **Physics**: `packages/qenex-physics` (Lattice models, Tensor operations)
+- **Biology**: `packages/qenex-bio` (Protein folding, Genomics)
+- **Math**: `packages/qenex-math` (Provers, Verifiers)
+- **Chemistry**: `packages/qenex-chem` (Hartree-Fock, Molecular dynamics)
+- **QLang**: `packages/qenex-qlang` (The Unified Scientific Language)
 
-Consult package-specific READMEs for domain constraints.
+Agents must utilize these specialized packages for high-precision tasks rather than rewriting core logic.
 
-- **Physics**: `packages/qenex-physics`
-- **Biology**: `packages/qenex-bio`
-- **Math**: `packages/qenex-math`
-- **Chemistry**: `packages/qenex-chem`
-- **QLang**: `packages/qenex-qlang`
+### Python Imports in Tests
 
-Agents must utilize these specialized packages for high-precision tasks.
+Since tests reside outside packages (`tests/`), you may need to manually append package paths if the environment is not fully installed as editable:
+
+```python
+import sys
+import os
+# Example: Adding qenex-chem to path
+sys.path.append(os.path.abspath("packages/qenex-chem/src"))
+```
 
 ---
 
-_Maintained by QENEX Sovereign Agent. Last Updated: 2026-01-08_
+_Maintained by QENEX Sovereign Agent. Last Updated: 2026-01-09_
