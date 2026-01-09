@@ -47,6 +47,86 @@ class CISolver:
     def compute_energy(self, molecule, method="FCI"):
         return 0.0
 
+class DIIS:
+    """
+    Direct Inversion in the Iterative Subspace (DIIS) helper.
+    Accelerates SCF convergence by extrapolating the Fock matrix
+    using a linear combination of previous Fock matrices that minimizes
+    the error vector.
+    """
+    def __init__(self, space_size=8):
+        self.space_size = space_size
+        self.fock_matrices = []
+        self.error_vectors = []
+        
+    def update(self, F, P, S):
+        """
+        Updates the DIIS history with the current Fock matrix and Error vector.
+        Error vector e = F*P*S - S*P*F (Commutator in AO basis).
+        """
+        # Calculate Error Vector e = FDS - SDF (where D is P)
+        FPS = F @ P @ S
+        SPF = S @ P @ F
+        e = FPS - SPF
+        
+        self.fock_matrices.append(F)
+        self.error_vectors.append(e)
+        
+        # Manage history size
+        if len(self.fock_matrices) > self.space_size:
+            self.fock_matrices.pop(0)
+            self.error_vectors.pop(0)
+            
+    def extrapolate(self):
+        """
+        Constructs the B matrix and solves for coefficients c_i
+        to minimize the error. Returns F_new = Sum c_i * F_i.
+        """
+        n = len(self.error_vectors)
+        if n < 1:
+            return None
+            
+        # Build B matrix: (n+1) x (n+1)
+        # | <ei|ej>  -1 |
+        # |   -1      0 |
+        
+        B = np.zeros((n + 1, n + 1))
+        
+        # Fill overlap block
+        for i in range(n):
+            for j in range(i, n):
+                # Trace inner product: <A|B> = tr(A.T @ B) = sum(A * B)
+                val = np.sum(self.error_vectors[i] * self.error_vectors[j])
+                B[i, j] = val
+                B[j, i] = val
+                
+        # Fill Lagrange multiplier borders
+        for i in range(n):
+            B[i, n] = -1.0
+            B[n, i] = -1.0
+            
+        B[n, n] = 0.0
+        
+        # RHS vector: [0, 0, ..., -1]
+        rhs = np.zeros(n + 1)
+        rhs[n] = -1.0
+        
+        try:
+            # Solve linear system
+            coeffs = np.linalg.solve(B, rhs)
+            
+            # Construct new Fock matrix
+            # coeffs has n+1 elements, last one is lagrange mult.
+            F_new = np.zeros_like(self.fock_matrices[0])
+            for i in range(n):
+                F_new += coeffs[i] * self.fock_matrices[i]
+                
+            return F_new
+            
+        except np.linalg.LinAlgError:
+            # Fallback if B is singular
+            return self.fock_matrices[-1]
+
 class HartreeFockSolver:
     """
     Restricted Hartree-Fock (RHF) Solver for closed-shell molecules.
@@ -398,6 +478,7 @@ class HartreeFockSolver:
         electronic_energy = 0.0
         old_energy = 0.0
         
+        diis = DIIS()
         print("Starting SCF Loop...")
         for iteration in range(max_iter):
             # Build G matrix
@@ -427,14 +508,42 @@ class HartreeFockSolver:
                     for a in range(n_occ):
                         P_new[mu, nu] += 2.0 * C[mu, a] * C[nu, a]
             
-            # Damping
-            if iteration > 0:
-                alpha = 0.5
-                P = alpha * P_new + (1.0 - alpha) * P
-            else:
-                P = P_new
+            # DIIS Update
+            diis.update(F, P_new, S)
+            F_diis = diis.extrapolate()
             
-            # Calculate Energy
+            if F_diis is not None and iteration >= 2:
+                # Use DIIS extrapolated Fock matrix to compute next C (next iter)
+                # But wait, we solve F' C' = e C'. 
+                # To make this effective, next iteration should use F_diis.
+                # However, F is computed from P in the loop top.
+                # Standard DIIS: F_new -> P_new. 
+                # If we extrapolate F, we should use F_diis to generate the *next* density?
+                # Actually, standard practice:
+                # 1. Compute F from P.
+                # 2. DIIS extrapolate F -> F_optimal.
+                # 3. Diagonalize F_optimal to get new C and P.
+                
+                # So we should rediagonalize here!
+                F_prime = X.T @ F_diis @ X
+                eps, C_prime = np.linalg.eigh(F_prime)
+                C = X @ C_prime
+                
+                # Recompute Density from DIIS optimized C
+                P = np.zeros((N, N))
+                for mu in range(N):
+                    for nu in range(N):
+                        for a in range(n_occ):
+                            P[mu, nu] += 2.0 * C[mu, a] * C[nu, a]
+            else:
+                # Fallback / Initial Damping
+                if iteration > 0:
+                    alpha = 0.5
+                    P = alpha * P_new + (1.0 - alpha) * P
+                else:
+                    P = P_new
+            
+            # Calculate Energy (use non-extrapolated F for variational energy)
             current_E = 0.5 * np.sum(P * (H_core + F))
             
             diff = np.abs(current_E - old_energy)
