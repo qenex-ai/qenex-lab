@@ -1018,6 +1018,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('deepseek '):
+                 self._handle_deepseek(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2312,6 +2317,61 @@ class QLangInterpreter:
         
         reasoner = self.context["_scout_reasoner"]
         handle_scout_command(reasoner, line, self.context)
+    
+    def _handle_deepseek(self, line: str):
+        """
+        Handle DeepSeek commands for scientific code generation.
+        
+        DeepSeek-Coder 33B specializes in generating high-quality scientific 
+        computing code across multiple languages and domains.
+        
+        Available commands:
+            deepseek generate "description"        - Generate code from description
+            deepseek generate "desc" --lang julia  - Generate in specific language
+            deepseek generate "desc" --template hartree_fock
+            deepseek optimize <code_var>           - Optimize existing code
+            deepseek test <code_var>               - Generate unit tests
+            deepseek explain <code_var>            - Explain code functionality
+            deepseek translate <code_var> julia    - Translate to another language
+            deepseek document <code_var>           - Generate documentation
+            deepseek templates                     - List available templates
+            deepseek status                        - Show engine status
+        
+        Templates:
+            hartree_fock       - Quantum chemistry SCF solver
+            molecular_dynamics - Classical MD simulation
+            neural_network     - Deep learning model
+            quantum_circuit    - Quantum computing circuit
+            optimization       - Numerical optimization
+            pde_solver         - Partial differential equations
+        
+        Target Languages:
+            python, julia, rust, qlang, cpp, lean, latex
+        
+        Args:
+            line: Command line starting with 'deepseek'
+        """
+        try:
+            from deepseek import DeepSeekEngine, handle_deepseek_command
+        except ImportError:
+            try:
+                import sys
+                import os
+                deepseek_dir = os.path.dirname(os.path.abspath(__file__))
+                if deepseek_dir not in sys.path:
+                    sys.path.insert(0, deepseek_dir)
+                from deepseek import DeepSeekEngine, handle_deepseek_command
+            except ImportError as e:
+                print(f"❌ DeepSeek Error: Could not load DeepSeek module: {e}")
+                return
+        
+        # Initialize engine on first use (lazy loading)
+        if "_deepseek_engine" not in self.context:
+            print("   [Q-Lang] Initializing DeepSeek Code Generation Engine...")
+            self.context["_deepseek_engine"] = DeepSeekEngine(verbose=True)
+        
+        engine = self.context["_deepseek_engine"]
+        handle_deepseek_command(engine, line, self.context)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
