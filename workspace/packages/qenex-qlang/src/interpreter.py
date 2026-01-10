@@ -1023,6 +1023,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('research '):
+                 self._handle_research(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2372,6 +2377,53 @@ class QLangInterpreter:
         
         engine = self.context["_deepseek_engine"]
         handle_deepseek_command(engine, line, self.context)
+    
+    def _handle_research(self, line: str):
+        """
+        Handle automated science research commands.
+        
+        The Research Engine provides autonomous paper discovery, retrieval,
+        parsing, and analysis with integration into the QENEX Trinity Pipeline.
+        
+        Available commands:
+            research search "query"              - Search arXiv for papers
+            research search "query" --max 20     - Search with max results
+            research fetch arxiv:2301.12345      - Fetch paper by arXiv ID
+            research fetch doi:10.1038/...       - Fetch paper by DOI
+            research fetch paper.pdf             - Load local PDF
+            research analyze <paper_id>          - Deep analysis of paper
+            research hypothesize "topic"         - Generate research hypotheses
+            research cite <paper_id>             - Generate BibTeX citation
+            research cite <paper_id> --format apa
+            research review "topic"              - Automated literature review
+            research list                        - List loaded papers
+            research context                     - Get context for Scout
+            research status                      - Show engine status
+        
+        Args:
+            line: Command line starting with 'research'
+        """
+        try:
+            from research import ResearchEngine, handle_research_command
+        except ImportError:
+            try:
+                import sys
+                import os
+                research_dir = os.path.dirname(os.path.abspath(__file__))
+                if research_dir not in sys.path:
+                    sys.path.insert(0, research_dir)
+                from research import ResearchEngine, handle_research_command
+            except ImportError as e:
+                print(f"❌ Research Error: Could not load Research module: {e}")
+                return
+        
+        # Initialize engine on first use (lazy loading)
+        if "_research_engine" not in self.context:
+            print("   [Q-Lang] Initializing Automated Science Research Engine...")
+            self.context["_research_engine"] = ResearchEngine(verbose=True)
+        
+        engine = self.context["_research_engine"]
+        handle_research_command(engine, line, self.context)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
