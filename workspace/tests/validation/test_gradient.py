@@ -1,10 +1,8 @@
-import sys
 import os
 import numpy as np
 import pytest
 
 # Add packages to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../packages/qenex-chem/src')))
 
 from solver import HartreeFockSolver
 from molecule import Molecule
@@ -26,7 +24,7 @@ def test_analytical_vs_numerical_gradient():
     mol = Molecule(atoms, charge=1)
     
     # 2. Setup Solver
-    solver = HartreeFockSolver(basis="sto-3g")
+    solver = HartreeFockSolver()  # Uses STO-3G by default
     
     # 3. Compute Analytical Gradient
     print("Computing Analytical Gradient...")

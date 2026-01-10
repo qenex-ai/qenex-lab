@@ -1,16 +1,15 @@
-
+"""Hydrogen Atom Validation Tests"""
 import numpy as np
-import sys
-sys.path.append('packages/qenex-chem/src')
 import integrals as ints
-from solver import ContractedGaussian, HartreeFockSolver
+from solver import HartreeFockSolver
+from integrals import ContractedGaussian
 from molecule import Molecule
 
 # Define H atom with multiplicity 2 (doublet)
 mol = Molecule([('H', (0.0, 0.0, 0.0))], multiplicity=2)
 
 # Build Basis (manually or via solver)
-solver = HartreeFockSolver(basis='sto-3g')
+solver = HartreeFockSolver()
 basis = solver.build_basis(mol)
 bf = basis[0] # H 1s
 

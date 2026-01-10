@@ -1,9 +1,7 @@
-import sys
 import os
 
 # Add workspace root to sys.path to allow imports from packages
 # We need to add the parent of 'packages' to sys.path, which is the workspace root.
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 import pytest
 import numpy as np
@@ -14,7 +12,6 @@ try:
     from packages.qenex_chem.src.solver import UHFSolver
 except ImportError:
     # Fallback for some test runners
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../packages')))
     from qenex_chem.src.molecule import Molecule
     from qenex_chem.src.solver import UHFSolver
 

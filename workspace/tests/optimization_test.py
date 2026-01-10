@@ -1,12 +1,9 @@
 
-import sys
 import os
 import random
 import time
 
 # Add package paths
-sys.path.append(os.path.abspath("packages/qenex-chem/src"))
-sys.path.append(os.path.abspath("packages/qenex-physics/src"))
 
 try:
     from solver import MatrixHartreeFock, Molecule

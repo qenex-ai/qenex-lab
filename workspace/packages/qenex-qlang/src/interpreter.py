@@ -15,6 +15,7 @@ import os
 import math
 import cmath
 import random 
+import decimal
 from decimal import Decimal, getcontext
 from dataclasses import dataclass
 from typing import Dict, Any, List, Union, Tuple
@@ -27,15 +28,20 @@ getcontext().prec = 50
 current_dir = os.path.dirname(os.path.abspath(__file__))
 packages_dir = os.path.dirname(os.path.dirname(current_dir))
 
-sys.path.append(os.path.join(packages_dir, "qenex-chem", "src"))
-sys.path.append(os.path.join(packages_dir, "qenex-bio", "src"))
-sys.path.append(os.path.join(packages_dir, "qenex-physics", "src"))
-sys.path.append(os.path.join(packages_dir, "qenex-math", "src"))
+# Add all package source directories to path
+# Note: qenex_chem uses underscore, others use hyphens
+sys.path.insert(0, os.path.join(packages_dir, "qenex_chem", "src"))  # Chemistry (underscore)
+sys.path.insert(0, os.path.join(packages_dir, "qenex-chem", "src"))  # Fallback (hyphen)
+sys.path.insert(0, os.path.join(packages_dir, "qenex-bio", "src"))
+sys.path.insert(0, os.path.join(packages_dir, "qenex-physics", "src"))
+sys.path.insert(0, os.path.join(packages_dir, "qenex-math", "src"))
+sys.path.insert(0, os.path.join(packages_dir, "qenex-core", "src"))
 
 # [INTEROP] Import Kernels
 Molecule = None
 MatrixHartreeFock = None
 CISolver = None
+MP2Solver = None
 ProteinFolder = None
 LatticeSimulator = None
 ProofState = None
@@ -43,13 +49,14 @@ TacticalProver = None
 
 try:
     from molecule import Molecule
-    from solver import HartreeFockSolver as MatrixHartreeFock, CISolver
+    from solver import HartreeFockSolver as MatrixHartreeFock, CISolver, MP2Solver
     from folding import ProteinFolder
     from optimized_lattice import OptimizedLattice as LatticeSimulator
     from prover import ProofState, TacticalProver
     KERNELS_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Scientific kernels not found: {e}. Running in localized mode.")
+    KERNELS_AVAILABLE = False
     KERNELS_AVAILABLE = False
 
 @dataclass
@@ -199,7 +206,10 @@ class QValue:
              val_dec = Decimal(str(self.value)) if not isinstance(self.value, Decimal) else self.value
              other_dec = Decimal(str(other))
              unc_dec = Decimal(str(self.uncertainty)) if not isinstance(self.uncertainty, Decimal) else self.uncertainty
-             return QValue(val_dec / other_dec, self.dims, unc_dec / other_dec)
+             try:
+                 return QValue(val_dec / other_dec, self.dims, unc_dec / abs(other_dec))
+             except (decimal.DivisionByZero, decimal.InvalidOperation):
+                 return QValue(Decimal('Infinity'), self.dims, self.uncertainty)
         
         if not isinstance(other, QValue): return NotImplemented
         
@@ -208,9 +218,15 @@ class QValue:
         
         # [FIX] Check for division by zero QValue
         if val_other == 0:
+             # 0/0 = NaN, nonzero/0 = Infinity
+             if val_self == 0:
+                 return QValue(Decimal('NaN'), self.dims - other.dims, self.uncertainty)
              return QValue(Decimal('Infinity'), self.dims - other.dims, self.uncertainty)
 
-        new_val = val_self / val_other
+        try:
+            new_val = val_self / val_other
+        except (decimal.DivisionByZero, decimal.InvalidOperation):
+            return QValue(Decimal('Infinity'), self.dims - other.dims, self.uncertainty)
         
         unc_self = Decimal(str(self.uncertainty)) if not isinstance(self.uncertainty, Decimal) else self.uncertainty
         unc_other = Decimal(str(other.uncertainty)) if not isinstance(other.uncertainty, Decimal) else other.uncertainty
@@ -599,14 +615,44 @@ class QLangInterpreter:
             return QValue(Decimal(res), Dimensions(), unc)
 
         def q_abs(x):
-             if not isinstance(x, QValue):
-                 return abs(x)
-             return x.__abs__()
+              if not isinstance(x, QValue):
+                  return abs(x)
+              return x.__abs__()
+
+        def q_log(x):
+            """Natural logarithm with uncertainty propagation."""
+            if not isinstance(x, QValue):
+                if isinstance(x, complex): return cmath.log(x)
+                if x <= 0:
+                    return float('-inf') if x == 0 else complex(math.log(abs(x)), math.pi)
+                return math.log(x)
+            if not x.is_dimensionless(): raise ValueError("log() requires dimensionless argument")
+            
+            val = x.value
+            if isinstance(val, complex):
+                return QValue(cmath.log(val), Dimensions())
+            
+            val_float = float(val)
+            if val_float <= 0:
+                if val_float == 0:
+                    return QValue(Decimal('-Infinity'), Dimensions())
+                # log of negative -> complex
+                return QValue(cmath.log(val_float), Dimensions())
+            
+            res = math.log(val_float)
+            
+            # Uncertainty: |dx/x|
+            unc = Decimal(0.0)
+            if x.uncertainty and val_float != 0:
+                unc = abs(Decimal(str(x.uncertainty)) / Decimal(str(val_float)))
+                
+            return QValue(Decimal(str(res)), Dimensions(), unc)
 
         safe_dict["sin"] = q_sin
         safe_dict["cos"] = q_cos
         safe_dict["exp"] = q_exp
         safe_dict["abs"] = q_abs
+        safe_dict["log"] = q_log
         
         # Physics Utils
         def gamma(v):
@@ -1033,16 +1079,28 @@ class QLangInterpreter:
         
         try:
             if domain == "chemistry":
-                # simulate chemistry <Type1> <x,y,z> <Type2> <x,y,z> ... [basis]
+                # simulate chemistry <Type1> <x,y,z> <Type2> <x,y,z> ... [basis] [method=hf|mp2|cis]
                 # E.g. simulate chemistry H 0,0,0 H 0.74,0,0 sto-3g
+                # E.g. simulate chemistry H 0,0,0 H 0.74,0,0 method=mp2
                 
                 atoms = []
-                basis = "sto-3g" # default
+                basis = "sto-3g"  # default
+                method = "hf"     # default: Hartree-Fock
                 
                 i = 2
                 while i < len(parts):
+                    # Check for basis set
                     if parts[i] in ["sto-3g", "6-31g"]: 
                         basis = parts[i]
+                        i += 1
+                        continue
+                    
+                    # Check for method option
+                    if parts[i].startswith("method="):
+                        method = parts[i].split("=")[1].lower()
+                        if method not in ["hf", "mp2", "cis"]:
+                            print(f"❌ Unknown method '{method}'. Use hf, mp2, or cis.")
+                            return
                         i += 1
                         continue
                         
@@ -1072,11 +1130,29 @@ class QLangInterpreter:
                     # [OPT] If silent, suppress stdout during kernel execution if possible
                     # For now we just suppress interpreter prints
                     
+                    method_name = {"hf": "Hartree-Fock", "mp2": "MP2", "cis": "CIS"}[method]
                     if not silent:
-                        print(f"   [Chemistry] Simulating {len(atoms)} atoms with {basis}...")
+                        print(f"   [Chemistry] Simulating {len(atoms)} atoms with {basis}, method={method_name}...")
                     
                     mol = Molecule(atoms)
-                    solver = MatrixHartreeFock()
+                    
+                    # Select solver based on method
+                    if method == "mp2":
+                        if MP2Solver is None:
+                            print("❌ MP2Solver not available. Falling back to HF.")
+                            solver = MatrixHartreeFock()
+                            method = "hf"
+                        else:
+                            solver = MP2Solver()
+                    elif method == "cis":
+                        if CISolver is None:
+                            print("❌ CISolver not available. Falling back to HF.")
+                            solver = MatrixHartreeFock()
+                            method = "hf"
+                        else:
+                            solver = CISolver()
+                    else:
+                        solver = MatrixHartreeFock()
                     
                     # Redirect stdout if silent to avoid kernel spam
                     if silent:
@@ -1091,22 +1167,56 @@ class QLangInterpreter:
                     else:
                         result = solver.compute_energy(mol)
                     
-                    # [FIX] Handle tuple return (energy, mp2_energy) from new chemistry kernel
-                    if isinstance(result, tuple):
-                         hf_energy = result[0]
-                         mp2_energy = result[1]
-                         energy = mp2_energy
-                         
-                         self.context["hf_energy"] = QValue(hf_energy, Dimensions(mass=1, length=2, time=-2))
-                         self.context["mp2_energy"] = QValue(mp2_energy, Dimensions(mass=1, length=2, time=-2))
-                         
-                         if not silent:
-                             print(f"✅ HF Energy = {hf_energy:.6f} Eh")
-                             print(f"✅ MP2 Energy = {mp2_energy:.6f} Eh")
+                    # Handle results based on method
+                    if method == "mp2":
+                        # MP2Solver returns (E_total, E_corr)
+                        if isinstance(result, tuple):
+                            mp2_total = result[0]
+                            mp2_corr = result[1]
+                            energy = mp2_total
+                            
+                            # Store correlation energy
+                            self.context["mp2_correlation"] = QValue(mp2_corr, Dimensions(mass=1, length=2, time=-2))
+                            
+                            if not silent:
+                                print(f"✅ MP2 Total Energy   = {mp2_total:.8f} Eh")
+                                print(f"   Correlation Energy = {mp2_corr:.8f} Eh ({1000*mp2_corr:.2f} mEh)")
+                        else:
+                            energy = result
+                            
+                    elif method == "cis":
+                        # CISolver returns (E_hf, [excitation_energies])
+                        if isinstance(result, tuple):
+                            hf_energy = result[0]
+                            excited = result[1] if len(result) > 1 else []
+                            energy = hf_energy
+                            
+                            self.context["excited_states"] = excited
+                            
+                            if not silent:
+                                print(f"✅ HF Ground State = {hf_energy:.8f} Eh")
+                                for idx, ex in enumerate(excited[:5]):
+                                    eV = ex * 27.2114
+                                    print(f"   Excited State {idx+1}: {eV:.4f} eV")
+                        else:
+                            energy = result
                     else:
-                         energy = result
-                         if not silent:
-                             print(f"✅ Energy = {energy:.6f} Eh")
+                        # Standard HF result
+                        if isinstance(result, tuple):
+                            hf_energy = result[0]
+                            mp2_energy = result[1]
+                            energy = mp2_energy
+                            
+                            self.context["hf_energy"] = QValue(hf_energy, Dimensions(mass=1, length=2, time=-2))
+                            self.context["mp2_energy"] = QValue(mp2_energy, Dimensions(mass=1, length=2, time=-2))
+                            
+                            if not silent:
+                                print(f"✅ HF Energy = {hf_energy:.6f} Eh")
+                                print(f"✅ MP2 Energy = {mp2_energy:.6f} Eh")
+                        else:
+                            energy = result
+                            if not silent:
+                                print(f"✅ Energy = {energy:.6f} Eh")
                     
                     self.context["last_energy"] = QValue(energy, Dimensions(mass=1, length=2, time=-2))
                     
@@ -1397,10 +1507,20 @@ class QLangInterpreter:
                 else:
                     result = np.array(result, dtype=float)
             
+            # [FIX] Wrap raw Decimal/float results in QValue for consistent arithmetic
+            if isinstance(result, Decimal):
+                result = QValue(result, Dimensions())
+            elif isinstance(result, (int, float)) and not isinstance(result, bool):
+                result = QValue(Decimal(str(result)), Dimensions())
+            
             self.context[var_name] = result
             print(f"✅ {var_name} = {result}")
         except Exception as e:
             print(f"❌ EXECUTION ERROR: {e}")
+            # [FIX] Re-raise security-related exceptions so callers can handle them
+            # This includes blocked builtins like __import__, exec, eval, etc.
+            if "__import__" in str(e) or "exec" in str(e) or "is not defined" in str(e):
+                raise
 
 if __name__ == "__main__":
     ql = QLangInterpreter()

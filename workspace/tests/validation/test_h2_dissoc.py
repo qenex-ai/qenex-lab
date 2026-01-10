@@ -1,9 +1,8 @@
 
 import numpy as np
-import sys
-sys.path.append('packages/qenex-chem/src')
 import integrals as ints
-from solver import ContractedGaussian, HartreeFockSolver
+from solver import HartreeFockSolver
+from integrals import ContractedGaussian
 from molecule import Molecule
 
 # Define 2 H atoms far apart (20 Bohr)
@@ -12,7 +11,7 @@ from molecule import Molecule
 mol = Molecule([('H', (0.0, 0.0, 0.0)), ('H', (20.0, 0.0, 0.0))])
 
 # Run SCF
-solver = HartreeFockSolver(basis='sto-3g')
+solver = HartreeFockSolver()
 E_nuc = solver.compute_nuclear_repulsion(mol)
 E_elec, E_tot = solver.compute_energy(mol)
 

@@ -39,6 +39,12 @@ export namespace Clipboard {
           return { data: imageBuffer.toString("base64"), mime: "image/png" }
         }
       }
+
+      // Try reading text if image failed
+      const text = await $`powershell.exe -NonInteractive -NoProfile -command "Get-Clipboard"`.nothrow().text()
+      if (text) {
+        return { data: text.trim(), mime: "text/plain" }
+      }
     }
 
     if (os === "linux") {

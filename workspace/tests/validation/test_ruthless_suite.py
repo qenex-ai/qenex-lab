@@ -1,14 +1,8 @@
 
-import sys
 import os
 import numpy as np
 
 # Add all package sources
-sys.path.append(os.path.abspath("packages/qenex-physics/src"))
-sys.path.append(os.path.abspath("packages/qenex-chem/src"))
-sys.path.append(os.path.abspath("packages/qenex-bio/src"))
-sys.path.append(os.path.abspath("packages/qenex-math/src"))
-sys.path.append(os.path.abspath("packages/qenex-qlang/src"))
 
 from lattice import LatticeSimulator
 from molecule import Molecule

@@ -1,0 +1,369 @@
+/* QENEX LAB Theme - Dark Mode with Titanium Accents */
+
+:root {
+  --qenex-blue: #0087FF;        /* Deep Oxygen Blue */
+  --qenex-titanium: #E8E8E8;    /* Titanium White */
+  --qenex-dark: #0A0E1A;        /* Deep background */
+  --qenex-panel: #14192D;       /* Panel background */
+  --qenex-accent: #00D4AA;      /* Accent color */
+  --qenex-success: #00FF88;     /* Success green */
+  --qenex-error: #FF4444;       /* Error red */
+}
+
+.qenex-lab-app {
+  background: var(--qenex-dark);
+  color: var(--qenex-titanium);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.qenex-header {
+  background: var(--qenex-panel);
+  border-bottom: 2px solid var(--qenex-blue);
+  padding: 1rem 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.qenex-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--qenex-blue);
+  letter-spacing: 0.05em;
+}
+
+.version {
+  color: var(--qenex-accent);
+  font-size: 0.9rem;
+}
+
+.main-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  height: calc(100vh - 140px);
+  flex: 1;
+}
+
+.chat-section {
+  border-right: 1px solid var(--qenex-blue);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.expert-section {
+  background: var(--qenex-panel);
+  overflow-y: auto;
+}
+
+.expert-panel {
+  padding: 1.5rem;
+}
+
+.expert-panel h2 {
+  color: var(--qenex-accent);
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.expert-count {
+  color: var(--qenex-titanium);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+.expert-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.expert-indicator {
+  background: var(--qenex-dark);
+  border: 1px solid var(--qenex-blue);
+  border-radius: 8px;
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+}
+
+.expert-indicator.thinking {
+  border-color: var(--qenex-accent);
+  animation: pulse 2s infinite;
+}
+
+.expert-indicator.validated {
+  border-color: var(--qenex-success);
+}
+
+.expert-indicator.error {
+  border-color: var(--qenex-error);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.expert-legend {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid;
+}
+
+.status-dot.idle {
+  border-color: var(--qenex-blue);
+}
+
+.status-dot.thinking {
+  border-color: var(--qenex-accent);
+  animation: pulse 2s infinite;
+}
+
+.status-dot.validated {
+  border-color: var(--qenex-success);
+}
+
+.status-bar {
+  background: var(--qenex-panel);
+  border-top: 2px solid var(--qenex-blue);
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.chat-window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.message-bubble {
+  padding: 1rem;
+  border-radius: 12px;
+  max-width: 80%;
+  word-wrap: break-word;
+}
+
+.message-bubble.user {
+  background: var(--qenex-blue);
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.message-bubble.assistant {
+  background: var(--qenex-panel);
+  border: 1px solid var(--qenex-blue);
+  align-self: flex-start;
+}
+
+.prompt-input {
+  border-top: 1px solid var(--qenex-blue);
+  padding: 1rem 2rem;
+  display: flex;
+  gap: 1rem;
+}
+
+.prompt-input input {
+  flex: 1;
+  background: var(--qenex-panel);
+  border: 1px solid var(--qenex-blue);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: var(--qenex-titanium);
+  font-size: 1rem;
+}
+
+.prompt-input input:focus {
+  outline: none;
+  border-color: var(--qenex-accent);
+}
+
+.prompt-input button {
+  background: var(--qenex-blue);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.prompt-input button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.prompt-input button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Markdown + LaTeX */
+.markdown-content {
+  line-height: 1.6;
+}
+
+.markdown-content p {
+  margin: 0.5rem 0;
+}
+
+.markdown-content code {
+  background: var(--qenex-dark);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+.markdown-content pre {
+  background: var(--qenex-dark);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-content .katex {
+  color: var(--qenex-titanium);
+}
+
+/* Trinity Signature */
+.trinity-signature {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--qenex-dark);
+  border-left: 3px solid var(--qenex-accent);
+  font-size: 0.9rem;
+  color: var(--qenex-accent);
+}
+
+.trinity-signature::before {
+  content: "✓ Validated by QENEX Trinity";
+}
+
+/* Context Badge - OMNI-AWARE Indicator */
+.context-badge {
+  background: var(--qenex-panel);
+  border-left: 3px solid var(--qenex-accent);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.badge-section {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.badge-icon {
+  font-size: 1.2rem;
+}
+
+.badge-label {
+  color: var(--qenex-accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-items {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.badge-item {
+  background: var(--qenex-dark);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.badge-item:hover {
+  transform: translateY(-1px);
+}
+
+.discovery-file {
+  color: var(--qenex-blue);
+  border: 1px solid var(--qenex-blue);
+  cursor: help;
+}
+
+.expert-badge {
+  color: var(--qenex-success);
+  border: 1px solid var(--qenex-success);
+}
+
+.expert-badge-minimal {
+  color: var(--qenex-titanium);
+  border: 1px solid var(--qenex-titanium);
+  opacity: 0.7;
+}
+
+.processing-time {
+  color: var(--qenex-titanium);
+  font-weight: 600;
+  margin-left: 0.25rem;
+}
+
+.omni-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--qenex-dark);
+  margin-top: 0.25rem;
+}
+
+.omni-icon {
+  font-size: 1rem;
+}
+
+.omni-text {
+  color: var(--qenex-accent);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}

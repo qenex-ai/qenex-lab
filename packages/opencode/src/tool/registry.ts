@@ -25,6 +25,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "@/util/log"
 import { LspTool } from "./lsp"
 import { Truncate } from "./truncation"
+import { MultiEditTool } from "./multiedit"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -99,6 +100,7 @@ export namespace ToolRegistry {
       GlobTool,
       GrepTool,
       EditTool,
+      MultiEditTool,
       WriteTool,
       TaskTool,
       WebFetchTool,

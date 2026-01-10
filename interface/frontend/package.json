@@ -1,0 +1,25 @@
+{
+  "name": "qenex-lab-chat",
+  "version": "3.0.0-infinity",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-js": "^1.9.10",
+    "marked": "^17.0.1",
+    "marked-katex-extension": "^5.1.6",
+    "marked-shiki": "^1.2.1",
+    "katex": "^0.16.27"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.10.0",
+    "typescript": "^5.0.0",
+    "@types/bun": "latest"
+  },
+  "module": "src/index.tsx",
+  "private": true
+}

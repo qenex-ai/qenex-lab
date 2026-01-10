@@ -1,0 +1,21 @@
+[package]
+name = "qenex_accelerate"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "qenex_accelerate"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+numpy = "0.20"
+ndarray = "0.15"
+rayon = "1.7"  # For parallelization
+core_affinity = "0.8"  # For CPU thread pinning
+once_cell = "1.19"  # For global statistics
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"

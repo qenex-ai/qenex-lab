@@ -4,8 +4,6 @@ import math
 from scipy.special import erf, gamma, gammainc
 
 # Import the module to test
-import sys
-sys.path.append('packages/qenex-chem/src')
 import integrals
 
 def reference_boys(n, t):

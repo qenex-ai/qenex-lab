@@ -1,0 +1,50 @@
+
+# Analysis of test_p_eri.py output
+# ERI (px px | px px): 0.921510
+# ERI (px px | py py): 0.000000  <-- THIS IS WRONG.
+# ERI (px py | px py): 0.000000  <-- THIS IS WRONG.
+
+# Coulomb repulsion between charge density |px|^2 and |py|^2 should be positive.
+# |px|^2 is x^2 e^-2r^2.
+# |py|^2 is y^2 e^-2r^2.
+# These are overlapping densities. Repulsion must be > 0.
+
+# Why is it zero?
+# `get_eri` recursion.
+# `eri` function calls `get_eri`.
+# `get_eri` handles recursion on indices.
+# (px px | py py) -> la=1, lb=1, ma=0, mb=0 ... lc=0, ld=0, mc=1, md=1.
+# Wait.
+# BasisFunction py: l=0, m=1, n=0.
+# So `la=1, lb=1` (for px, px). `mc=1, md=1` (for py, py).
+# `get_eri(1, 1, 0, 0, 0, 0, 1, 1, ...)`
+# My code has:
+# `if la > 0:`
+# ... `term1`, `term2`, ...
+# `term1` calls `get_eri(la-1, ...)`.
+# So it reduces `la`.
+# Eventually `la=0, lb=0`.
+# Then it checks `if ma > 0`. `if mc > 0`.
+# But wait.
+# `if la > 0` returns `res`.
+# It does NOT fall through to `if mc > 0`.
+# THIS IS CORRECT behavior (sequential reduction).
+
+# BUT, look at `la > 0` block.
+# `term3` uses `(la-1)/(2p)`.
+# `term4` uses `lb/(2p)`.
+# `term5` uses `lc/(2(p+q))`.
+# `term6` uses `ld/(2(p+q))`.
+# These are terms that decrease `la, lb, lc, ld`.
+# But what about `mc, md`?
+# They are not touched in `la > 0` block.
+# They are passed down to recursive calls.
+# `get_eri(..., mc, md, ...)`
+# So eventually `la=0, lb=0`.
+# Then the code checks `if mc > 0`.
+
+# Let's check `if mc > 0` block in `integrals.py`.
+# Wait, I didn't see `if mc > 0` block fully in my previous read?
+# I saw `if ma > 0`, `if mb > 0`.
+# And `if mc > 0`.
+# Let's read `integrals.py` again around line 720.

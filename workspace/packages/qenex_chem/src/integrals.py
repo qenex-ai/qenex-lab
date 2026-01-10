@@ -9,8 +9,20 @@ import numpy as np
 from scipy.special import erf, gamma as scipy_gamma, gammainc as scipy_gammainc
 import numba
 from numba import jit, float64, int64
+from numba.typed import Dict
+from numba.core import types
 
 import math
+
+# [PATCH] Check for Rust Acceleration
+# The QENEX Sovereign Agent has implemented a zero-copy FFI bridge
+# to accelerate O(N^4) integral calculations.
+try:
+    import qenex_accelerate
+    RUST_AVAILABLE = True
+except ImportError:
+    RUST_AVAILABLE = False
+    # Fallback to pure Python/Numba if Rust module not built
 
 # ==========================================
 # STO-3G Basis Set Definitions
@@ -251,7 +263,7 @@ def normalize_primitive(alpha, lmn):
 # JIT-compiled Boys function wrapper
 # Numba does not support scipy.special.erf directly in nopython mode easily without extra config in some versions,
 # but supports math.erf from python 3.2+. Numpy erf is also supported.
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def boys_jit(n, t):
     """
     Boys function F_n(t) = integral_0^1 u^(2n) exp(-t u^2) du
@@ -296,24 +308,50 @@ def boys(n, t):
 # ==========================================
 
 class BasisFunction:
-    def __init__(self, origin, alpha, coeff, lmn=(0,0,0)):
+    def __init__(self, origin=None, alpha=None, coeff=1.0, lmn=(0,0,0), l=None, m=None, n=None):
+        """
+        Create a primitive Gaussian basis function.
+        
+        Supports two calling conventions:
+        1. BasisFunction(origin, alpha, coeff, lmn=(0,0,0))       # Original API
+        2. BasisFunction(alpha=a, origin=o, l=0, m=0, n=0)        # Test API (PrimitiveGaussian style)
+        """
+        # Handle origin - required parameter
+        if origin is None:
+            raise TypeError("BasisFunction requires 'origin' parameter")
         self.origin = np.array(origin, dtype=np.float64)
+        
+        # Handle alpha - required parameter  
+        if alpha is None:
+            raise TypeError("BasisFunction requires 'alpha' parameter")
         self.alpha = float(alpha)
+        
+        # Handle coefficient
         self.coeff = float(coeff)
-        self.l, self.m, self.n = lmn
+        
+        # Handle angular momentum - support both lmn tuple and individual l,m,n kwargs
+        if l is not None or m is not None or n is not None:
+            # Use individual l,m,n if provided (default to 0 if not specified)
+            self.l = l if l is not None else 0
+            self.m = m if m is not None else 0
+            self.n = n if n is not None else 0
+        else:
+            # Use lmn tuple
+            self.l, self.m, self.n = lmn
+            
         self.L = self.l + self.m + self.n
-        self.norm = normalize_primitive(alpha, lmn)
+        self.norm = normalize_primitive(self.alpha, (self.l, self.m, self.n))
         self.N = self.coeff * self.norm
 
 # ==========================================
 # JIT-Optimized Integral Kernels
 # ==========================================
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def gaussian_product_center(alpha1, A, alpha2, B):
     return (alpha1 * A + alpha2 * B) / (alpha1 + alpha2)
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def overlap_1d(l1, l2, xA, xB, alpha, beta):
     """
     1D Overlap Integral between (x-xA)^l1 and (x-xB)^l2
@@ -349,7 +387,7 @@ def overlap_1d(l1, l2, xA, xB, alpha, beta):
                 
     return S[l1, l2]
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def overlap_jit(la, ma, na, lb, mb, nb, ra, rb, alpha, beta):
     p = alpha + beta
     diff = ra - rb
@@ -366,7 +404,7 @@ def overlap(a, b):
     val = overlap_jit(a.l, a.m, a.n, b.l, b.m, b.n, a.origin, b.origin, a.alpha, b.alpha)
     return a.N * b.N * val
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def kinetic_jit(la, ma, na, lb, mb, nb, ra, rb, alpha, beta):
     p = alpha + beta
     
@@ -409,13 +447,127 @@ def kinetic(a, b):
     val = kinetic_jit(a.l, a.m, a.n, b.l, b.m, b.n, a.origin, b.origin, a.alpha, b.alpha)
     return a.N * b.N * val
 
-# Note: Nuclear Attraction and ERI involve recursion that is harder to flatten for Numba without
-# explicit stack management or fixed recursion depth. For now, we keep them in Python but optimize
-# the Boys function and primitives.
-#
-# Optimization Strategy:
-# 1. Provide a `nuclear_attraction_jit` that handles just the s-s case efficiently.
-# 2. Keep the general recursive one in Python for now, but call the JIT boys function.
+@jit(nopython=True, fastmath=True, cache=True)
+def nuclear_recursion_inner(L, m, boys_vals, ctx):
+    """
+    Optimized recursive helper for Nuclear Attraction Integrals.
+    L: tuple/array of (la, lb, ma, mb, na, nb)
+    ctx: array of [Rp(3), C(3), p, kab, a_origin(3), b_origin(3)] -> size 14
+    """
+    la, lb, ma, mb, na, nb = L
+    
+    # Unpack ctx for readability (compiler will optimize)
+    # Rp = ctx[0:3] # slices can be slow if creating new arrays, use indexing
+    # C = ctx[3:6]
+    p = ctx[6]
+    kab = ctx[7]
+    # a_origin = ctx[8:11]
+    # b_origin = ctx[11:14]
+
+    # Base case check
+    if la == 0 and lb == 0 and ma == 0 and mb == 0 and na == 0 and nb == 0:
+        return (2.0 * np.pi / p) * kab * boys_vals[m]
+
+    # X-axis recurrence
+    if la > 0:
+        L_new = (la-1, lb, ma, mb, na, nb)
+        term1 = (ctx[0] - ctx[8]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[0] - ctx[3]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if la > 1:
+            L_new2 = (la-2, lb, ma, mb, na, nb)
+            term3 = (la-1)/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if lb > 0:
+            L_new3 = (la-1, lb-1, ma, mb, na, nb)
+            term4 = lb/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                              nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    if lb > 0:
+        L_new = (la, lb-1, ma, mb, na, nb)
+        term1 = (ctx[0] - ctx[11]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[0] - ctx[3]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if la > 0:
+             L_new2 = (la-1, lb-1, ma, mb, na, nb)
+             term3 = la/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                               nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if lb > 1:
+            L_new3 = (la, lb-2, ma, mb, na, nb)
+            term4 = (lb-1)/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    # Y-axis recurrence
+    if ma > 0:
+        L_new = (la, lb, ma-1, mb, na, nb)
+        term1 = (ctx[1] - ctx[9]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[1] - ctx[4]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if ma > 1:
+            L_new2 = (la, lb, ma-2, mb, na, nb)
+            term3 = (ma-1)/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if mb > 0:
+            L_new3 = (la, lb, ma-1, mb-1, na, nb)
+            term4 = mb/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                              nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    if mb > 0:
+        L_new = (la, lb, ma, mb-1, na, nb)
+        term1 = (ctx[1] - ctx[12]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[1] - ctx[4]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if ma > 0:
+            L_new2 = (la, lb, ma-1, mb-1, na, nb)
+            term3 = ma/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                              nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if mb > 1:
+            L_new3 = (la, lb, ma, mb-2, na, nb)
+            term4 = (mb-1)/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    # Z-axis recurrence
+    if na > 0:
+        L_new = (la, lb, ma, mb, na-1, nb)
+        term1 = (ctx[2] - ctx[10]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[2] - ctx[5]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if na > 1:
+            L_new2 = (la, lb, ma, mb, na-2, nb)
+            term3 = (na-1)/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if nb > 0:
+            L_new3 = (la, lb, ma, mb, na-1, nb-1)
+            term4 = nb/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                              nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    if nb > 0:
+        L_new = (la, lb, ma, mb, na, nb-1)
+        term1 = (ctx[2] - ctx[13]) * nuclear_recursion_inner(L_new, m, boys_vals, ctx)
+        term2 = (ctx[2] - ctx[5]) * nuclear_recursion_inner(L_new, m+1, boys_vals, ctx)
+        term3 = 0.0
+        if na > 0:
+            L_new2 = (la, lb, ma, mb, na-1, nb-1)
+            term3 = na/(2*p) * (nuclear_recursion_inner(L_new2, m, boys_vals, ctx) - 
+                              nuclear_recursion_inner(L_new2, m+1, boys_vals, ctx))
+        term4 = 0.0
+        if nb > 1:
+            L_new3 = (la, lb, ma, mb, na, nb-2)
+            term4 = (nb-1)/(2*p) * (nuclear_recursion_inner(L_new3, m, boys_vals, ctx) - 
+                                  nuclear_recursion_inner(L_new3, m+1, boys_vals, ctx))
+        return term1 - term2 + term3 + term4
+
+    return 0.0
 
 def nuclear_attraction(a, b, C, Z):
     """
@@ -435,526 +587,454 @@ def nuclear_attraction(a, b, C, Z):
     L_total = a.L + b.L
     T_val = p * np.dot(RPC, RPC)
     
-    # Use JIT boys function
-    boys_vals = [boys_jit(n, float(T_val)) for n in range(L_total + 1)]
+    boys_vals = np.zeros(L_total + 1)
+    for n in range(L_total + 1):
+        boys_vals[n] = boys_jit(n, float(T_val))
     
-    memo = {}
+    # Pack context: [Rp(3), C(3), p, kab, a_origin(3), b_origin(3)] -> 14 floats
+    ctx = np.zeros(14)
+    ctx[0:3] = Rp
+    ctx[3:6] = C
+    ctx[6] = p
+    ctx[7] = kab
+    ctx[8:11] = a.origin
+    ctx[11:14] = b.origin
 
-    def get_v(la, lb, ma, mb, na, nb, m):
-        key = (la, lb, ma, mb, na, nb, m)
-        if key in memo:
-            return memo[key]
-        
-        if la == 0 and lb == 0 and ma == 0 and mb == 0 and na == 0 and nb == 0:
-            return (2.0 * np.pi / p) * kab * boys_vals[m]
-        
-        if la > 0:
-            term1 = (Rp[0] - a.origin[0]) * get_v(la-1, lb, ma, mb, na, nb, m)
-            term2 = (Rp[0] - C[0]) * get_v(la-1, lb, ma, mb, na, nb, m+1)
-            term3 = (la-1)/(2*p) * ( get_v(la-2, lb, ma, mb, na, nb, m) - get_v(la-2, lb, ma, mb, na, nb, m+1) ) if la > 1 else 0.0
-            term4 = lb/(2*p) * ( get_v(la-1, lb-1, ma, mb, na, nb, m) - get_v(la-1, lb-1, ma, mb, na, nb, m+1) ) if lb > 0 else 0.0
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-            
-        if lb > 0:
-            term1 = (Rp[0] - b.origin[0]) * get_v(la, lb-1, ma, mb, na, nb, m)
-            term2 = (Rp[0] - C[0]) * get_v(la, lb-1, ma, mb, na, nb, m+1)
-            term3 = la/(2*p) * ( get_v(la-1, lb-1, ma, mb, na, nb, m) - get_v(la-1, lb-1, ma, mb, na, nb, m+1) ) if la > 0 else 0.0
-            term4 = (lb-1)/(2*p) * ( get_v(la, lb-2, ma, mb, na, nb, m) - get_v(la, lb-2, ma, mb, na, nb, m+1) ) if lb > 1 else 0.0
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-
-        if ma > 0:
-            term1 = (Rp[1] - a.origin[1]) * get_v(la, lb, ma-1, mb, na, nb, m)
-            term2 = (Rp[1] - C[1]) * get_v(la, lb, ma-1, mb, na, nb, m+1)
-            term3 = (ma-1)/(2*p) * ( get_v(la, lb, ma-2, mb, na, nb, m) - get_v(la, lb, ma-2, mb, na, nb, m+1) ) if ma > 1 else 0.0
-            term4 = mb/(2*p) * ( get_v(la, lb, ma-1, mb-1, na, nb, m) - get_v(la, lb, ma-1, mb-1, na, nb, m+1) ) if mb > 0 else 0.0
-            # print(f"DEBUG ma>0: m={m}, t1={term1}, t2={term2}, t3={term3}, t4={term4}")
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-
-        if mb > 0:
-            term1 = (Rp[1] - b.origin[1]) * get_v(la, lb, ma, mb-1, na, nb, m)
-            term2 = (Rp[1] - C[1]) * get_v(la, lb, ma, mb-1, na, nb, m+1)
-            term3 = ma/(2*p) * ( get_v(la, lb, ma-1, mb-1, na, nb, m) - get_v(la, lb, ma-1, mb-1, na, nb, m+1) ) if ma > 0 else 0.0
-            term4 = (mb-1)/(2*p) * ( get_v(la, lb, ma, mb-2, na, nb, m) - get_v(la, lb, ma, mb-2, na, nb, m+1) ) if mb > 1 else 0.0
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-            
-        if na > 0:
-            term1 = (Rp[2] - a.origin[2]) * get_v(la, lb, ma, mb, na-1, nb, m)
-            term2 = (Rp[2] - C[2]) * get_v(la, lb, ma, mb, na-1, nb, m+1)
-            term3 = (na-1)/(2*p) * ( get_v(la, lb, ma, mb, na-2, nb, m) - get_v(la, lb, ma, mb, na-2, nb, m+1) ) if na > 1 else 0.0
-            term4 = nb/(2*p) * ( get_v(la, lb, ma, mb, na-1, nb-1, m) - get_v(la, lb, ma, mb, na-1, nb-1, m+1) ) if nb > 0 else 0.0
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-
-        if nb > 0:
-            term1 = (Rp[2] - b.origin[2]) * get_v(la, lb, ma, mb, na, nb-1, m)
-            term2 = (Rp[2] - C[2]) * get_v(la, lb, ma, mb, na, nb-1, m+1)
-            term3 = na/(2*p) * ( get_v(la, lb, ma, mb, na-1, nb-1, m) - get_v(la, lb, ma, mb, na-1, nb-1, m+1) ) if na > 0 else 0.0
-            term4 = (nb-1)/(2*p) * ( get_v(la, lb, ma, mb, na, nb-2, m) - get_v(la, lb, ma, mb, na, nb-2, m+1) ) if nb > 1 else 0.0
-            res = term1 - term2 + term3 + term4
-            memo[key] = res
-            return res
-            
-        return 0.0
-
-    val = get_v(a.l, b.l, a.m, b.m, a.n, b.n, 0)
+    L_tuple = (a.l, b.l, a.m, b.m, a.n, b.n)
+    
+    val = nuclear_recursion_inner(L_tuple, 0, boys_vals, ctx)
     return -Z * a.N * b.N * val
+
+
+# ==========================================
+# ERI Implementation (Pure Python with Memoization)
+# ==========================================
+
+def eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache):
+    """
+    Pure Python recursive ERI with memoization.
+    This avoids Numba JIT compilation issues with deep recursion.
+    """
+    key = (la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
+    if key in cache:
+        return cache[key]
+    
+    p = ctx[6]
+    q = ctx[7]
+    rho = ctx[8]
+    prefactor = ctx[21]
+    
+    L_sum = la + lb + lc + ld + ma + mb + mc + md + na + nb + nc + nd
+    if L_sum == 0:
+        result = prefactor * boys_vals[m]
+        cache[key] = result
+        return result
+    
+    result = 0.0
+    
+    # X-Axis: la
+    if la > 0:
+        term1 = (ctx[0] - ctx[9]) * eri_recursion_python(la-1, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[0] - ctx[3]) * eri_recursion_python(la-1, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if la > 1:
+            val = eri_recursion_python(la-2, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la-2, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = (la-1)/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if lb > 0:
+            val = eri_recursion_python(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = lb/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if lc > 0:
+            val = eri_recursion_python(la-1, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = lc / (2*(p+q)) * val
+        term6 = 0.0
+        if ld > 0:
+            val = eri_recursion_python(la-1, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = ld / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # X-Axis: lb
+    if lb > 0:
+        term1 = (ctx[0] - ctx[12]) * eri_recursion_python(la, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[0] - ctx[3]) * eri_recursion_python(la, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if la > 0:
+            val = eri_recursion_python(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = la/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if lb > 1:
+            val = eri_recursion_python(la, lb-2, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb-2, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = (lb-1)/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if lc > 0:
+            val = eri_recursion_python(la, lb-1, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = lc / (2*(p+q)) * val
+        term6 = 0.0
+        if ld > 0:
+            val = eri_recursion_python(la, lb-1, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = ld / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # X-Axis: lc
+    if lc > 0:
+        term1 = (ctx[3] - ctx[15]) * eri_recursion_python(la, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[0] - ctx[3]) * eri_recursion_python(la, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if lc > 1:
+            val = eri_recursion_python(la, lb, lc-2, ld, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc-2, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = (lc-1)/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if ld > 0:
+            val = eri_recursion_python(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = ld/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if la > 0:
+            val = eri_recursion_python(la-1, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = la / (2*(p+q)) * val
+        term6 = 0.0
+        if lb > 0:
+            val = eri_recursion_python(la, lb-1, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = lb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # X-Axis: ld
+    if ld > 0:
+        term1 = (ctx[3] - ctx[18]) * eri_recursion_python(la, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[0] - ctx[3]) * eri_recursion_python(la, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if lc > 0:
+            val = eri_recursion_python(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = lc/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if ld > 1:
+            val = eri_recursion_python(la, lb, lc, ld-2, ma, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld-2, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = (ld-1)/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if la > 0:
+            val = eri_recursion_python(la-1, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = la / (2*(p+q)) * val
+        term6 = 0.0
+        if lb > 0:
+            val = eri_recursion_python(la, lb-1, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = lb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Y-Axis: ma
+    if ma > 0:
+        term1 = (ctx[1] - ctx[10]) * eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[1] - ctx[4]) * eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if ma > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = (ma-1)/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if mb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = mb/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if mc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = mc / (2*(p+q)) * val
+        term6 = 0.0
+        if md > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = md / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Y-Axis: mb
+    if mb > 0:
+        term1 = (ctx[1] - ctx[13]) * eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[1] - ctx[4]) * eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if ma > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = ma/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if mb > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = (mb-1)/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if mc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = mc / (2*(p+q)) * val
+        term6 = 0.0
+        if md > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = md / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Y-Axis: mc
+    if mc > 0:
+        term1 = (ctx[4] - ctx[16]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[1] - ctx[4]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if mc > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = (mc-1)/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if md > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = md/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if ma > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = ma / (2*(p+q)) * val
+        term6 = 0.0
+        if mb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = mb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Y-Axis: md
+    if md > 0:
+        term1 = (ctx[4] - ctx[19]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[1] - ctx[4]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if mc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = mc/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if md > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = (md-1)/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if ma > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term5 = ma / (2*(p+q)) * val
+        term6 = 0.0
+        if mb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term6 = mb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Z-Axis: na
+    if na > 0:
+        term1 = (ctx[2] - ctx[11]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[2] - ctx[5]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if na > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = (na-1)/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if nb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = nb/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if nc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1, boys_vals, ctx, cache)
+            term5 = nc / (2*(p+q)) * val
+        term6 = 0.0
+        if nd > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1, boys_vals, ctx, cache)
+            term6 = nd / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Z-Axis: nb
+    if nb > 0:
+        term1 = (ctx[2] - ctx[14]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m, boys_vals, ctx, cache)
+        term2 = -(q/(p+q)) * (ctx[2] - ctx[5]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if na > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1, boys_vals, ctx, cache)
+            term3 = na/(2*p) * (val - (rho/p)*val_m)
+        term4 = 0.0
+        if nb > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m+1, boys_vals, ctx, cache)
+            term4 = (nb-1)/(2*p) * (val - (rho/p)*val_m)
+        term5 = 0.0
+        if nc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc-1, nd, m+1, boys_vals, ctx, cache)
+            term5 = nc / (2*(p+q)) * val
+        term6 = 0.0
+        if nd > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd-1, m+1, boys_vals, ctx, cache)
+            term6 = nd / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Z-Axis: nc
+    if nc > 0:
+        term1 = (ctx[5] - ctx[17]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[2] - ctx[5]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if nc > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m+1, boys_vals, ctx, cache)
+            term3 = (nc-1)/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if nd > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1, boys_vals, ctx, cache)
+            term4 = nd/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if na > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1, boys_vals, ctx, cache)
+            term5 = na / (2*(p+q)) * val
+        term6 = 0.0
+        if nb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc-1, nd, m+1, boys_vals, ctx, cache)
+            term6 = nb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    # Z-Axis: nd
+    if nd > 0:
+        term1 = (ctx[5] - ctx[20]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m, boys_vals, ctx, cache)
+        term2 = (p/(p+q)) * (ctx[2] - ctx[5]) * eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m+1, boys_vals, ctx, cache)
+        term3 = 0.0
+        if nc > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1, boys_vals, ctx, cache)
+            term3 = nc/(2*q) * (val - (rho/q)*val_m)
+        term4 = 0.0
+        if nd > 1:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m, boys_vals, ctx, cache)
+            val_m = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m+1, boys_vals, ctx, cache)
+            term4 = (nd-1)/(2*q) * (val - (rho/q)*val_m)
+        term5 = 0.0
+        if na > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1, boys_vals, ctx, cache)
+            term5 = na / (2*(p+q)) * val
+        term6 = 0.0
+        if nb > 0:
+            val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd-1, m+1, boys_vals, ctx, cache)
+            term6 = nb / (2*(p+q)) * val
+        result = term1 + term2 + term3 + term4 + term5 + term6
+        cache[key] = result
+        return result
+
+    return 0.0
+
+
+def eri_primitive(alphaA, alphaB, alphaC, alphaD,
+                  A, B, C, D,
+                  la, ma, na, lb, mb, nb, 
+                  lc, mc, nc, ld, md, nd,
+                  normA, normB, normC, normD):
+    """
+    Primitive ERI function - no JIT to avoid compilation issues.
+    Uses pure Python memoized recursion.
+    """
+    p = alphaA + alphaB
+    q = alphaC + alphaD
+    alpha_Q = p * q / (p + q)
+    
+    Rp = gaussian_product_center_py(alphaA, A, alphaB, B)
+    Rq = gaussian_product_center_py(alphaC, C, alphaD, D)
+    Rpq = Rp - Rq
+    
+    diff_ab = A - B
+    diff_cd = C - D
+    
+    kab = np.exp(- (alphaA * alphaB / p) * np.dot(diff_ab, diff_ab))
+    kcd = np.exp(- (alphaC * alphaD / q) * np.dot(diff_cd, diff_cd))
+    prefactor = (2 * np.pi**2.5) / (p * q * np.sqrt(p + q)) * kab * kcd
+    
+    L_total = la + lb + lc + ld + ma + mb + mc + md + na + nb + nc + nd
+    T_val = alpha_Q * np.dot(Rpq, Rpq)
+    
+    # Precompute Boys Function values
+    boys_vals = np.zeros(L_total + 1)
+    for n in range(L_total + 1):
+        boys_vals[n] = boys_py(n, float(T_val))
+    
+    # Pack context: [Rp(3), Rq(3), p, q, rho, A(3), B(3), C(3), D(3), prefactor] -> size 22
+    ctx = np.zeros(22)
+    ctx[0:3] = Rp
+    ctx[3:6] = Rq
+    ctx[6] = p
+    ctx[7] = q
+    ctx[8] = alpha_Q
+    ctx[9:12] = A
+    ctx[12:15] = B
+    ctx[15:18] = C
+    ctx[18:21] = D
+    ctx[21] = prefactor
+    
+    # Use Python dict for memoization
+    cache = {}
+    val = eri_recursion_python(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, 0, boys_vals, ctx, cache)
+    return normA * normB * normC * normD * val
+
+
+def gaussian_product_center_py(alphaA, A, alphaB, B):
+    """Pure Python version of gaussian product center."""
+    return (alphaA * A + alphaB * B) / (alphaA + alphaB)
+
+
+def boys_py(n, T):
+    """Pure Python Boys function."""
+    if T < 1e-10:
+        return 1.0 / (2 * n + 1)
+    
+    if T > 50.0:
+        # Asymptotic expansion
+        from scipy.special import gamma as scipy_gamma
+        return scipy_gamma(n + 0.5) / (2 * T**(n + 0.5))
+    
+    # Use incomplete gamma function
+    from scipy.special import gammainc as scipy_gammainc, gamma as scipy_gamma
+    return 0.5 * T**(-n - 0.5) * scipy_gamma(n + 0.5) * scipy_gammainc(n + 0.5, T)
+
 
 def eri(a, b, c, d):
     """
     Two-Electron Repulsion Integral (ab|cd)
+    Pure Python implementation with memoization.
     """
-    alpha = a.alpha
-    beta = b.alpha
-    gamma = c.alpha
-    delta = d.alpha
-    
-    p = alpha + beta
-    q = gamma + delta
-    alpha_Q = p * q / (p + q)
-    
-    Rp = gaussian_product_center(alpha, a.origin, beta, b.origin)
-    Rq = gaussian_product_center(gamma, c.origin, delta, d.origin)
-    Rpq = Rp - Rq
-    
-    diff_ab = a.origin - b.origin
-    diff_cd = c.origin - d.origin
-    
-    kab = np.exp(- (alpha * beta / p) * np.dot(diff_ab, diff_ab))
-    kcd = np.exp(- (gamma * delta / q) * np.dot(diff_cd, diff_cd))
-    prefactor = (2 * np.pi**2.5) / (p * q * np.sqrt(p + q)) * kab * kcd
-    
-    L_total = a.L + b.L + c.L + d.L
-    T_val = alpha_Q * np.dot(Rpq, Rpq)
-    boys_vals = [boys_jit(n, float(T_val)) for n in range(L_total + 1)]
-    
-    memo = {}
+    return eri_primitive(
+        a.alpha, b.alpha, c.alpha, d.alpha,
+        a.origin, b.origin, c.origin, d.origin,
+        a.l, a.m, a.n, b.l, b.m, b.n,
+        c.l, c.m, c.n, d.l, d.m, d.n,
+        a.N, b.N, c.N, d.N
+    )
 
-    def get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m):
-        key = (la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-        if key in memo: return memo[key]
-        
-        rho = alpha_Q
 
-        if sum(key[:-1]) == 0:
-            return prefactor * boys_vals[m]
-            
-        if la > 0:
-            Wi_minus_Pi_x = - (q / (p + q)) * (Rp[0] - Rq[0])
-            Pi_minus_Ai_x = (Rp[0] - a.origin[0])
-            
-            term1 = Pi_minus_Ai_x * get_eri(la-1, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Pi_x * get_eri(la-1, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if la > 1:
-                val_minus = get_eri(la-2, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_minus_m1 = get_eri(la-2, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term3 = (la-1)/(2*p) * (val_minus - (rho/p)*val_minus_m1)
-                
-            term4 = 0.0
-            if lb > 0:
-                val_minus = get_eri(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_minus_m1 = get_eri(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term4 = lb/(2*p) * (val_minus - (rho/p)*val_minus_m1)
-            
-            term5 = 0.0
-            if lc > 0:
-                val_c = get_eri(la-1, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term5 = lc / (2*(p+q)) * val_c 
-            
-            term6 = 0.0
-            if ld > 0:
-                val_d = get_eri(la-1, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term6 = ld / (2*(p+q)) * val_d
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if lb > 0:
-             Pi_minus_Bi_x = (Rp[0] - b.origin[0])
-             Wi_minus_Pi_x = - (q / (p + q)) * (Rp[0] - Rq[0])
-             
-             term1 = Pi_minus_Bi_x * get_eri(la, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-             term2 = Wi_minus_Pi_x * get_eri(la, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-             
-             term3 = 0.0
-             if la > 0:
-                 val = get_eri(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-                 val_m = get_eri(la-1, lb-1, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                 term3 = la/(2*p) * (val - (rho/p)*val_m)
-                 
-             term4 = 0.0
-             if lb > 1:
-                 val = get_eri(la, lb-2, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-                 val_m = get_eri(la, lb-2, lc, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                 term4 = (lb-1)/(2*p) * (val - (rho/p)*val_m)
-                 
-             term5 = 0.0
-             if lc > 0:
-                 val = get_eri(la, lb-1, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                 term5 = lc / (2*(p+q)) * val
-                 
-             term6 = 0.0
-             if ld > 0:
-                 val = get_eri(la, lb-1, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                 term6 = ld / (2*(p+q)) * val
-             
-             res = term1 + term2 + term3 + term4 + term5 + term6
-             memo[key] = res
-             return res
-        
-        # Recurse on C (switch centers)
-        if lc > 0:
-            Qi_minus_Ci_x = (Rq[0] - c.origin[0])
-            Wi_minus_Qi_x = (p / (p + q)) * (Rp[0] - Rq[0])
-            
-            term1 = Qi_minus_Ci_x * get_eri(la, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Qi_x * get_eri(la, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if lc > 1:
-                val = get_eri(la, lb, lc-2, ld, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc-2, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term3 = (lc-1)/(2*q) * (val - (rho/q)*val_m)
-                
-            term4 = 0.0
-            if ld > 0:
-                val = get_eri(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term4 = ld/(2*q) * (val - (rho/q)*val_m)
-                
-            term5 = 0.0
-            if la > 0:
-                 val = get_eri(la-1, lb, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                 term5 = la / (2*(p+q)) * val
-            
-            term6 = 0.0
-            if lb > 0:
-                val = get_eri(la, lb-1, lc-1, ld, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term6 = lb / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
 
-        if ld > 0:
-            Qi_minus_Di_x = (Rq[0] - d.origin[0])
-            Wi_minus_Qi_x = (p / (p + q)) * (Rp[0] - Rq[0])
-            
-            term1 = Qi_minus_Di_x * get_eri(la, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Qi_x * get_eri(la, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if lc > 0:
-                val = get_eri(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc-1, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term3 = lc/(2*q) * (val - (rho/q)*val_m)
-            
-            term4 = 0.0
-            if ld > 1:
-                val = get_eri(la, lb, lc, ld-2, ma, mb, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld-2, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term4 = (ld-1)/(2*q) * (val - (rho/q)*val_m)
-            
-            term5 = 0.0
-            if la > 0:
-                val = get_eri(la-1, lb, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term5 = la / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if lb > 0:
-                val = get_eri(la, lb-1, lc, ld-1, ma, mb, mc, md, na, nb, nc, nd, m+1)
-                term6 = lb / (2*(p+q)) * val
-            
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
 
-        # Handle Y/Z axes
-        # Y axis
-        if ma > 0:
-            Pi_minus_Ai_y = (Rp[1] - a.origin[1])
-            Wi_minus_Pi_y = - (q / (p + q)) * (Rp[1] - Rq[1])
-            
-            term1 = Pi_minus_Ai_y * get_eri(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Pi_y * get_eri(la, lb, lc, ld, ma-1, mb, mc, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if ma > 1:
-                val = get_eri(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma-2, mb, mc, md, na, nb, nc, nd, m+1)
-                term3 = (ma-1)/(2*p) * (val - (rho/p)*val_m)
-            
-            term4 = 0.0
-            if mb > 0:
-                val = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1)
-                term4 = mb/(2*p) * (val - (rho/p)*val_m)
-                
-            term5 = 0.0
-            if mc > 0:
-                # FIXED: Decrement mc, not lc
-                val = get_eri(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1)
-                term5 = mc / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if md > 0:
-                # FIXED: Decrement md, not ld
-                val = get_eri(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1)
-                term6 = md / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if mb > 0:
-            Pi_minus_Bi_y = (Rp[1] - b.origin[1])
-            Wi_minus_Pi_y = - (q / (p + q)) * (Rp[1] - Rq[1])
-            
-            term1 = Pi_minus_Bi_y * get_eri(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Pi_y * get_eri(la, lb, lc, ld, ma, mb-1, mc, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if ma > 0:
-                val = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma-1, mb-1, mc, md, na, nb, nc, nd, m+1)
-                term3 = ma/(2*p) * (val - (rho/p)*val_m)
-                
-            term4 = 0.0
-            if mb > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb-2, mc, md, na, nb, nc, nd, m+1)
-                term4 = (mb-1)/(2*p) * (val - (rho/p)*val_m)
-            
-            term5 = 0.0
-            if mc > 0:
-                # FIXED: Decrement mc, not lc
-                val = get_eri(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1)
-                term5 = mc / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if md > 0:
-                # FIXED: Decrement md, not ld
-                val = get_eri(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1)
-                term6 = md / (2*(p+q)) * val
 
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if mc > 0:
-            Qi_minus_Ci_y = (Rq[1] - c.origin[1])
-            Wi_minus_Qi_y = (p / (p + q)) * (Rp[1] - Rq[1])
-            
-            term1 = Qi_minus_Ci_y * get_eri(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m)
-            term2 = Wi_minus_Qi_y * get_eri(la, lb, lc, ld, ma, mb, mc-1, md, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if mc > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-2, md, na, nb, nc, nd, m+1)
-                term3 = (mc-1)/(2*q) * (val - (rho/q)*val_m)
-                
-            term4 = 0.0
-            if md > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1)
-                term4 = md/(2*q) * (val - (rho/q)*val_m)
-            
-            term5 = 0.0
-            if ma > 0:
-                val = get_eri(la, lb, lc, ld, ma-1, mb, mc-1, md, na, nb, nc, nd, m+1)
-                term5 = ma / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if mb > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb-1, mc-1, md, na, nb, nc, nd, m+1)
-                term6 = mb / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if md > 0:
-            Qi_minus_Di_y = (Rq[1] - d.origin[1])
-            Wi_minus_Qi_y = (p / (p + q)) * (Rp[1] - Rq[1])
-            
-            term1 = Qi_minus_Di_y * get_eri(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m)
-            term2 = Wi_minus_Qi_y * get_eri(la, lb, lc, ld, ma, mb, mc, md-1, na, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if mc > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc-1, md-1, na, nb, nc, nd, m+1)
-                term3 = mc/(2*q) * (val - (rho/q)*val_m)
-                
-            term4 = 0.0
-            if md > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md-2, na, nb, nc, nd, m+1)
-                term4 = (md-1)/(2*q) * (val - (rho/q)*val_m)
-                
-            term5 = 0.0
-            if ma > 0:
-                val = get_eri(la, lb, lc, ld, ma-1, mb, mc, md-1, na, nb, nc, nd, m+1)
-                term5 = ma / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if mb > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb-1, mc, md-1, na, nb, nc, nd, m+1)
-                term6 = mb / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        # Z axis
-        if na > 0:
-            Pi_minus_Ai_z = (Rp[2] - a.origin[2])
-            Wi_minus_Pi_z = - (q / (p + q)) * (Rp[2] - Rq[2])
-            
-            term1 = Pi_minus_Ai_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m)
-            term2 = Wi_minus_Pi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd, m+1)
-            
-            term3 = 0.0
-            if na > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-2, nb, nc, nd, m+1)
-                term3 = (na-1)/(2*p) * (val - (rho/p)*val_m)
-                
-            term4 = 0.0
-            if nb > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1)
-                term4 = nb/(2*p) * (val - (rho/p)*val_m)
-                
-            term5 = 0.0
-            if nc > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1)
-                term5 = nc / (2*(p+q)) * val
-                
-            term6 = 0.0
-            if nd > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1)
-                term6 = nd / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-        
-        if nb > 0:
-            Pi_minus_Bi_z = (Rp[2] - b.origin[2])
-            Wi_minus_Pi_z = - (q / (p + q)) * (Rp[2] - Rq[2])
-            
-            term1 = Pi_minus_Bi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m)
-            term2 = Wi_minus_Pi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd, m+1)
-            
-            term3 = 0.0
-            if na > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb-1, nc, nd, m+1)
-                term3 = na/(2*p) * (val - (rho/p)*val_m)
-            
-            term4 = 0.0
-            if nb > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-2, nc, nd, m+1)
-                term4 = (nb-1)/(2*p) * (val - (rho/p)*val_m)
-            
-            term5 = 0.0
-            if nc > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc-1, nd, m+1)
-                term5 = nc / (2*(p+q)) * val
-            
-            term6 = 0.0
-            if nd > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb-1, nc, nd-1, m+1)
-                term6 = nd / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if nc > 0:
-            Qi_minus_Ci_z = (Rq[2] - c.origin[2])
-            Wi_minus_Qi_z = (p / (p + q)) * (Rp[2] - Rq[2])
-            
-            term1 = Qi_minus_Ci_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m)
-            term2 = Wi_minus_Qi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m+1)
-            
-            term3 = 0.0
-            if nc > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-2, nd, m+1)
-                term3 = (nc-1)/(2*q) * (val - (rho/q)*val_m)
-                
-            term4 = 0.0
-            if nd > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1)
-                term4 = nd/(2*q) * (val - (rho/q)*val_m)
-            
-            term5 = 0.0
-            if na > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc-1, nd, m+1)
-                term5 = na / (2*(p+q)) * val
-            
-            term6 = 0.0
-            if nb > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd, m+1)
-                term6 = nb / (2*(p+q)) * val
-                
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-            
-        if nd > 0:
-            Qi_minus_Di_z = (Rq[2] - d.origin[2])
-            Wi_minus_Qi_z = (p / (p + q)) * (Rp[2] - Rq[2])
-            
-            term1 = Qi_minus_Di_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m)
-            term2 = Wi_minus_Qi_z * get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m+1)
-            
-            term3 = 0.0
-            if nc > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc-1, nd-1, m+1)
-                term3 = nc/(2*q) * (val - (rho/q)*val_m)
-                
-            term4 = 0.0
-            if nd > 1:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m)
-                val_m = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-2, m+1)
-                term4 = (nd-1)/(2*q) * (val - (rho/q)*val_m)
-            
-            term5 = 0.0
-            if na > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na-1, nb, nc, nd-1, m+1)
-                term5 = na / (2*(p+q)) * val
-            
-            term6 = 0.0
-            if nb > 0:
-                val = get_eri(la, lb, lc, ld, ma, mb, mc, md, na, nb, nc, nd-1, m+1)
-                term6 = nb / (2*(p+q)) * val
-            
-            res = term1 + term2 + term3 + term4 + term5 + term6
-            memo[key] = res
-            return res
-
-        return 0.0
-
-    val = get_eri(a.l, b.l, c.l, d.l, a.m, b.m, c.m, d.m, a.n, b.n, c.n, d.n, 0)
-    return a.N * b.N * c.N * d.N * val
 
 # ==========================================
 # Derivative Helpers
@@ -1193,3 +1273,234 @@ def build_basis(molecule):
              pass
 
     return basis_set
+
+# ==========================================
+# JIT Gradient Implementation
+# ==========================================
+
+def eri_deriv_quartet(
+    alphaA, alphaB, alphaC, alphaD,
+    A, B, C, D,
+    la, ma, na, lb, mb, nb,
+    lc, mc, nc, ld, md, nd,
+    normA, normB, normC, normD
+):
+    """
+    Computes the gradient of the ERI (ab|cd) with respect to the coordinates
+    of the four centers A, B, C, D.
+    Returns a (4, 3) array of gradients [dA, dB, dC, dD].
+    """
+    grads = np.zeros((4, 3))
+    
+    # --- Center A Gradients ---
+    # x-component (la)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la+1, ma, na, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                              1.0, normB, normC, normD)
+    term_x = 2.0 * alphaA * val_p
+    
+    if la > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la-1, ma, na, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                                  1.0, normB, normC, normD)
+        term_x -= la * val_m
+    grads[0, 0] = normA * term_x
+
+    # y-component (ma)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma+1, na, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                              1.0, normB, normC, normD)
+    term_y = 2.0 * alphaA * val_p
+    
+    if ma > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma-1, na, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                                  1.0, normB, normC, normD)
+        term_y -= ma * val_m
+    grads[0, 1] = normA * term_y
+    
+    # z-component (na)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na+1, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                              1.0, normB, normC, normD)
+    term_z = 2.0 * alphaA * val_p
+    
+    if na > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na-1, lb, mb, nb, lc, mc, nc, ld, md, nd,
+                                  1.0, normB, normC, normD)
+        term_z -= na * val_m
+    grads[0, 2] = normA * term_z
+
+    # --- Center B Gradients ---
+    # x-component (lb)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb+1, mb, nb, lc, mc, nc, ld, md, nd,
+                              normA, 1.0, normC, normD)
+    term_x = 2.0 * alphaB * val_p
+    if lb > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb-1, mb, nb, lc, mc, nc, ld, md, nd,
+                                  normA, 1.0, normC, normD)
+        term_x -= lb * val_m
+    grads[1, 0] = normB * term_x
+    
+    # y-component (mb)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb+1, nb, lc, mc, nc, ld, md, nd,
+                              normA, 1.0, normC, normD)
+    term_y = 2.0 * alphaB * val_p
+    if mb > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb-1, nb, lc, mc, nc, ld, md, nd,
+                                  normA, 1.0, normC, normD)
+        term_y -= mb * val_m
+    grads[1, 1] = normB * term_y
+    
+    # z-component (nb)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb+1, lc, mc, nc, ld, md, nd,
+                              normA, 1.0, normC, normD)
+    term_z = 2.0 * alphaB * val_p
+    if nb > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb-1, lc, mc, nc, ld, md, nd,
+                                  normA, 1.0, normC, normD)
+        term_z -= nb * val_m
+    grads[1, 2] = normB * term_z
+    
+    # --- Center C Gradients ---
+    # x-component (lc)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc+1, mc, nc, ld, md, nd,
+                              normA, normB, 1.0, normD)
+    term_x = 2.0 * alphaC * val_p
+    if lc > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc-1, mc, nc, ld, md, nd,
+                                  normA, normB, 1.0, normD)
+        term_x -= lc * val_m
+    grads[2, 0] = normC * term_x
+    
+    # y-component (mc)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc, mc+1, nc, ld, md, nd,
+                              normA, normB, 1.0, normD)
+    term_y = 2.0 * alphaC * val_p
+    if mc > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc, mc-1, nc, ld, md, nd,
+                                  normA, normB, 1.0, normD)
+        term_y -= mc * val_m
+    grads[2, 1] = normC * term_y
+    
+    # z-component (nc)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc, mc, nc+1, ld, md, nd,
+                              normA, normB, 1.0, normD)
+    term_z = 2.0 * alphaC * val_p
+    if nc > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc, mc, nc-1, ld, md, nd,
+                                  normA, normB, 1.0, normD)
+        term_z -= nc * val_m
+    grads[2, 2] = normC * term_z
+
+    # --- Center D Gradients ---
+    # x-component (ld)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc, mc, nc, ld+1, md, nd,
+                              normA, normB, normC, 1.0)
+    term_x = 2.0 * alphaD * val_p
+    if ld > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc, mc, nc, ld-1, md, nd,
+                                  normA, normB, normC, 1.0)
+        term_x -= ld * val_m
+    grads[3, 0] = normD * term_x
+    
+    # y-component (md)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc, mc, nc, ld, md+1, nd,
+                              normA, normB, normC, 1.0)
+    term_y = 2.0 * alphaD * val_p
+    if md > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc, mc, nc, ld, md-1, nd,
+                                  normA, normB, normC, 1.0)
+        term_y -= md * val_m
+    grads[3, 1] = normD * term_y
+    
+    # z-component (nd)
+    val_p = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                              la, ma, na, lb, mb, nb, lc, mc, nc, ld, md, nd+1,
+                              normA, normB, normC, 1.0)
+    term_z = 2.0 * alphaD * val_p
+    if nd > 0:
+        val_m = eri_primitive(alphaA, alphaB, alphaC, alphaD, A, B, C, D,
+                                  la, ma, na, lb, mb, nb, lc, mc, nc, ld, md, nd-1,
+                                  normA, normB, normC, 1.0)
+        term_z -= nd * val_m
+    grads[3, 2] = normD * term_z
+    
+    return grads
+
+def grad_rhf_2e_jit(
+    atom_coords,        # (N_atoms, 3)
+    atom_indices,       # (N_prims,)
+    basis_indices,      # (N_prims,)
+    exponents,          # (N_prims,)
+    norms,              # (N_prims,) - Includes contraction coeffs
+    lmns,               # (N_prims, 3)
+    D_matrix            # (N_basis, N_basis)
+):
+    n_prims = len(exponents)
+    n_atoms = len(atom_coords)
+    total_grad = np.zeros((n_atoms, 3))
+    
+    for i in range(n_prims):
+        for j in range(n_prims):
+            for k in range(n_prims):
+                for l in range(n_prims):
+                    
+                    mu = basis_indices[i]
+                    nu = basis_indices[j]
+                    lam = basis_indices[k]
+                    sig = basis_indices[l]
+                    
+                    # Density Screening
+                    term_coul = 0.5 * D_matrix[mu, nu] * D_matrix[lam, sig]
+                    term_exch = 0.25 * D_matrix[mu, lam] * D_matrix[nu, sig]
+                    factor = term_coul - term_exch
+                    
+                    if np.abs(factor) < 1e-12:
+                        continue
+                    
+                    # Compute Gradient of (ij|kl)
+                    grads = eri_deriv_quartet(
+                        exponents[i], exponents[j], exponents[k], exponents[l],
+                        atom_coords[atom_indices[i]], atom_coords[atom_indices[j]], 
+                        atom_coords[atom_indices[k]], atom_coords[atom_indices[l]],
+                        lmns[i,0], lmns[i,1], lmns[i,2],
+                        lmns[j,0], lmns[j,1], lmns[j,2],
+                        lmns[k,0], lmns[k,1], lmns[k,2],
+                        lmns[l,0], lmns[l,1], lmns[l,2],
+                        norms[i], norms[j], norms[k], norms[l]
+                    )
+                    
+                    # Accumulate to atoms
+                    at_i = atom_indices[i]
+                    at_j = atom_indices[j]
+                    at_k = atom_indices[k]
+                    at_l = atom_indices[l]
+                    
+                    for dim in range(3):
+                        total_grad[at_i, dim] += factor * grads[0, dim]
+                        total_grad[at_j, dim] += factor * grads[1, dim]
+                        total_grad[at_k, dim] += factor * grads[2, dim]
+                        total_grad[at_l, dim] += factor * grads[3, dim]
+                        
+    return total_grad
+
+# [FIX] Alias for backward compatibility - PrimitiveGaussian is the same as BasisFunction
+PrimitiveGaussian = BasisFunction

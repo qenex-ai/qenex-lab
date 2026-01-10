@@ -1,0 +1,39 @@
+
+import numpy as np
+import sys
+sys.path.append('packages/qenex-chem/src')
+import integrals as ints
+
+# Check kinetic for p-orbitals OFF-CENTER (Overlap in 3D)
+# Kinetic JIT term check.
+# Previous 3D test matched numeric for s-s and p-s.
+
+# Let's check the EXACT kinetic term in integrals.py again.
+# Term: T = -0.5 * (TxSySz + SxTySz + SxSyTz)
+# This is correct for T = -0.5 Laplacian.
+# Laplacian = d2/dx2 + d2/dy2 + d2/dz2.
+# <A | d2/dx2 + ... | B> = <A|d2x|B><y|y><z|z> + ...
+# This formula relies on Cartesian separation.
+# Gaussians are separable. e^-r^2 = e^-x^2 e^-y^2 e^-z^2.
+# This is CORRECT.
+
+# So 1-electron integrals (T, V, S) seem correct.
+# ERI seems correct (at least for s-s).
+
+# If E_elec is too negative (-111 vs -84).
+# T is positive. V is negative.
+# If T was missing factor 0.5 (T computed is 2x true T)?
+# Then T would be larger positive. Energy would be HIGHER (less negative).
+# We have energy TOO NEGATIVE.
+# So T is too small or V is too negative.
+# Or Repulsion (positive) is too small.
+
+# Hypotheses:
+# 1. Repulsion (ERI) is too small.
+# 2. Nuclear Attraction (V_ne) is too strong (too negative).
+
+# ERI Check for p-orbitals?
+# Maybe `get_eri` recursion for p-orbitals is broken?
+# I saw `if la > 0 ... return res` logic in the read file.
+# It looked like `if lb > 0` was inside `if la > 0` block? Or sequential?
+# Let's check the structure of `get_eri` CAREFULLY.

@@ -1,11 +1,9 @@
 
 import numpy as np
 from decimal import Decimal
-import sys
 import os
 
 # Add src to path
-sys.path.append(os.path.abspath("packages/qenex-qlang/src"))
 from interpreter import QValue, Dimensions
 
 def test_vector_ops():

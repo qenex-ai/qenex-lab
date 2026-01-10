@@ -1,14 +1,9 @@
 
-import sys
 import os
 import time
 import numpy as np
 
 # Add package paths
-sys.path.append(os.path.abspath("packages/qenex-chem/src"))
-sys.path.append(os.path.abspath("packages/qenex-bio/src"))
-sys.path.append(os.path.abspath("packages/qenex-physics/src"))
-sys.path.append(os.path.abspath("packages/qenex-math/src"))
 
 from molecule import Molecule
 from solver import HartreeFockSolver

@@ -1,0 +1,471 @@
+
+import numpy as np
+import sys
+sys.path.append('packages/qenex-chem/src')
+import integrals as ints
+from solver import ContractedGaussian, HartreeFockSolver
+from molecule import Molecule
+
+# Check kinetic integral for JIT vs Python
+# We previously saw a difference:
+# JIT=0.588, Num=0.588.
+# But I want to double check my previous Kinetic JIT test was correct.
+# In test_integrals.py, I got:
+# Kinetic 3D s-s: Num=1.468293, JIT=0.588348
+# Kinetic 3D p-s: Num=0.940852, JIT=0.573570
+# Wait! Num=1.46 vs JIT=0.58.
+# Then in debug_kinetic.py, I got Num 3D T = 0.588.
+# The `debug_kinetic.py` implementation was manually constructing 3D T from 1D components.
+# The `test_integrals.py` `numerical_kinetic` function was 1D?
+# `vals = bra(x) * (-0.5 * laplacian_ket(x))`
+# This calculates <x|T|x> (1D).
+# In `test_integrals.py`:
+# `kin_num = numerical_kinetic(...)` (1D result)
+# `total_k_num = kin_num * norm_y * norm_z + s_x_jit * k_y_num * norm_z + ...`
+# This was constructing 3D result from 1D.
+# And it gave 1.46?
+# Ah, `numerical_kinetic` was using `min(A,B)-5` etc.
+# But `alpha=1.5`, `beta=0.8`.
+# In `debug_kinetic.py`, I used same params.
+# `Num 1D (x): S=0.551, T=-0.144`.
+# In `test_integrals.py`, did I print 1D T? No.
+# If T_x = -0.144. T_y = 0.609. T_z = 0.609.
+# S_x = 0.551. S_y = 1.168. S_z = 1.168.
+# T_tot = T_x Sy Sz + Sx Ty Sz + Sx Sy Tz
+# = -0.144 * 1.168^2 + 0.551 * 0.609 * 1.168 + 0.551 * 1.168 * 0.609
+# = -0.144 * 1.36 + 0.39 + 0.39
+# = -0.19 + 0.78 = 0.59.
+# So `debug_kinetic.py` was correct (0.588).
+# Why did `test_integrals.py` give 1.46?
+# Maybe `numerical_kinetic` in `test_integrals.py` was wrong?
+# `laplacian_ket`: `d1 = (term1 + term2) * np.exp(-beta * u**2)`
+# `poly_prime = t1_prime + t2_prime`
+# `term_prod = (term1 + term2) * (-2 * beta * u)`
+# `(poly_prime + term_prod) * np.exp`
+# This looks correct.
+# Maybe integration range? `bounds = min(A, B) - 5...`
+# Wait. `test_integrals.py` used `la=0, lb=0`.
+# `debug_kinetic.py` also used `0, 0`.
+# I suspect `test_integrals.py` had a bug in the manual reconstruction or numerical int.
+# But `debug_kinetic` result matched JIT result.
+# So Kinetic JIT is likely correct.
+
+# So problem is not Kinetic.
+
+# If ERI is correct.
+# If Nuclear Attraction is correct.
+# If Kinetic is correct.
+
+# What about NORMALIZATION of Basis Set?
+# `ContractedGaussian.normalize()`
+# It computes `overlap` of the CGF with itself.
+# `norm_factor = 1.0 / sqrt(overlap)`.
+# `p.coeff *= norm_factor`.
+# `p.N *= norm_factor`.
+# `p.N` is initialized in `BasisFunction` as `coeff * normalize_primitive`.
+# `normalize_primitive` is correct.
+# So CGF normalization seems correct.
+
+# What about the BASIS SET DEFINITION?
+# `integrals.STO3G`.
+# Is the STO-3G definition for Oxygen correct?
+# `basis_1s`
+# `basis_2s`
+# `basis_2p`
+# And `zeta`.
+# STO-3G uses `alpha = alpha_prime * zeta^2`.
+# `basis_2p` uses same exponents as `2s`? Yes, standard STO-3G.
+# Coefficients?
+# `basis_2p` coeffs: 0.39, 0.60, 0.15.
+# `basis_2s` coeffs: 0.70, 0.39, -0.09.
+# These look standard.
+
+# Let's check `nuclear_attraction` for p-orbitals.
+# `get_v` function.
+# It uses recursion.
+# `if la > 0: ...`
+# `term1 = (Rp[0] - a.origin[0]) * get_v(...)`
+# `term2 = (Rp[0] - C[0]) * get_v(..., m+1)`
+# Formula:
+# [a+1 | b] = (Pi - Ai) [a|b] - (Pi - C) [a|b]^(m+1) ... 
+# Wait. `(Rp - C)`.
+# `term2` has MINUS sign in code?
+# `res = term1 - term2 ...`
+# Formula:
+# V_{ab} = ...
+# [0|0]^(m) = 2pi/p K_ab F_m(T)
+# Recurrence:
+# [a+1 0 | 0 0]^(m) = (Pi - Ai) [a 0 | 0 0]^(m) - (Pi - C) [a 0 | 0 0]^(m+1) + ...
+# My code: `term2 = (Rp[0] - C[0]) * get_v(..., m+1)`.
+# `res = term1 - term2`.
+# So it subtracts term2. Correct.
+# `term3 = (la-1)/(2*p) * ( [la-2] - [la-2]^(m+1) )`.
+# My code: `(la-1)/(2*p) * ( get_v(la-2..., m) - get_v(la-2..., m+1) )`.
+# Correct.
+
+# What about `if lb > 0`?
+# `term1 = (Rp[0] - b.origin[0]) * get_v(...)`
+# `term2 = (Rp[0] - C[0]) * get_v(..., m+1)`
+# Same structure.
+# But wait. `get_v(la, lb-1...)`.
+# The recurrence is usually on center A.
+# To handle center B, you can use:
+# [a b+1] = [a+1 b] + (Ai - Bi) [a b].
+# Transfer relation.
+# OR use explicit recurrence for b.
+# Does my code implement explicit recurrence for B?
+# `if lb > 0:`
+# It seems to copy the same logic as A but using `b.origin`.
+# Is this valid?
+# Symmetry?
+# [a b] = [b a].
+# If we swap A and B, we swap alpha, beta, originA, originB.
+# P is same. Rp is same.
+# So formula should be symmetric.
+# `term1` uses `Rp - B`.
+# `term2` uses `Rp - C`.
+# `term4` uses `(lb-1)/(2p)`.
+# `term3` uses `la/(2p)`.
+# Wait. `term3` in `lb>0` block involves `la`.
+# `la/(2*p) * ( get_v(la-1, lb-1...) ... )`.
+# This is the coupling term.
+# The derivative of [a|b] w.r.t B is related to A?
+# Obara-Saika for V:
+# [a b+1] = ...
+# Standard OS uses transfer or direct recurrence.
+# If direct recurrence:
+# [a b+1] = (Pi - Bi) [a b] - (Pi - C) [a b]^(m+1) + (a)/(2p) ([a-1 b] - [a-1 b]^(m+1)) + (b)/(2p) ([a b-1] - [a b-1]^(m+1)).
+# Code:
+# `term3 = la/(2*p) ...`.
+# `term4 = (lb-1)/(2*p) ...`.
+# This looks CORRECT.
+
+# BUT check `get_v` base case `return 0.0`.
+# If `la=0` and `lb=0` ... it hits `if la==0... return`.
+# If `la=0`, it goes to `if lb > 0`.
+# If `lb=0`, it goes to `if ma > 0`.
+# This assumes we clear x-axis first, then y, then z.
+# But `lb > 0` block calls `get_v(la, lb-1, ...)`?
+# Yes.
+# And inside `if la > 0`, it calls `get_v(la-1, lb...)`.
+# So it reduces `la` to 0. Then `lb` to 0. Then `ma` to 0...
+# This strategy (reducing indices sequentially) is valid.
+
+# WAIT.
+# Look at `kinetic_jit` again.
+# `T_1d = -0.5 * [ l2(l2-1)<l1|l2-2> - 2beta(2l2+1)<l1|l2> + 4beta^2 <l1|l2+2> ]`
+# This formula computes < l1 | -0.5 d2/dx2 | l2 > ?
+# No, it computes < l1 | T | l2 > using the derivative of the Ket.
+# `laplacian_ket` in `test_integrals.py`:
+# `d2/dx2 ket = [ 4b^2 (x-B)^2 - 2b(2lb+1) + lb(lb-1)(x-B)^-2 ] ket` ?
+# My derivation in `test_integrals.py`:
+# `t1_prime = lb * (lb-1) * u**(lb-2)`
+# `t2_prime = -2 * beta * (lb+1) * u**lb`
+# `term_prod = (term1 + term2) * (-2 * beta * u)`
+# `term1 = lb u^(lb-1)`. `term2 = -2b u^(lb+1)`.
+# `term_prod = -2b lb u^lb + 4b^2 u^(lb+2)`.
+# Total coeff of u^(lb+2): `4b^2`.
+# Total coeff of u^lb: `t2_prime` + `term_prod_1` = `-2b(lb+1)` + `-2b lb` = `-2b(2lb+1)`.
+# Total coeff of u^(lb-2): `lb(lb-1)`.
+# So `d2/dx2 | l2 >` = `4b^2 | l2+2 > - 2b(2l2+1) | l2 > + l2(l2-1) | l2-2 >`.
+# (Assuming B=0 for ket notation).
+# Integral < l1 | d2/dx2 | l2 >
+# = 4b^2 <l1|l2+2> - 2b(2l2+1)<l1|l2> + l2(l2-1)<l1|l2-2>.
+# `kinetic_jit` computes:
+# `t1 = l2(l2-1) s_minus` (matches l2-2 term)
+# `t2 = -2b(2l2+1) s0` (matches l2 term)
+# `t3 = 4b^2 s_plus` (matches l2+2 term)
+# `return -0.5 * (t1 + t2 + t3)`.
+# This is CORRECT.
+
+# So T is correct.
+# V_ne is correct (formula matches, H-atom matches).
+# ERI is correct (ss matches).
+# Basis set is correct.
+
+# WHAT ELSE?
+# "Boys function check passed"
+# "Repulsion matches (Geometry is correct in Bohr)" - Nuclear repulsion 9.196.
+
+# "Electronic Energy is too negative (-111.44 Ha vs -84.16 Ha)."
+# Electronic Energy = Sum P (H + F).
+# Or Sum P H_core + E_repulsion.
+# If E_elec is too negative, and T+V is correct...
+# Then E_repulsion must be too small?
+# Wait.
+# H2 (R=20) gave E_tot = -1.88 (MP2) but HF was -0.57.
+# MP2 correlation was -1.31.
+# -102.24 water result.
+# MP2 correlation for water was -0.002.
+# This is suspicious. MP2 for water should be larger (~ -0.2 Ha).
+# If MP2 is -0.002, maybe virtual orbitals are weird?
+# Or ERI is weird.
+
+# Let's look at `eri` recursion again.
+# `term6 = ld / (2*(p+q)) * val_d`.
+# This is for `lc > 0` block.
+# Wait.
+# `lc` recursion. `Qi_minus_Ci` term.
+# `term4 = ld / (2q) * (val - rho/q val_m)`.
+# This is the coupling between c and d on the same center/pair?
+# `c` and `d` are the second electron pair (ket).
+# `q = gamma + delta`.
+# Formula for [a b | c+1 d]:
+# (Qi - Ci) [ab|cd] - (Qi - W) [ab|cd]^(m+1) ...
+# W = P. No, W is the Schwartz center? No.
+# Rp, Rq.
+# W = (p Rp + q Rq) / (p+q).
+# `Wi_minus_Qi_x = W - Rq`.
+# `W - Rq = (p Rp + q Rq - (p+q)Rq) / (p+q) = p(Rp - Rq) / (p+q)`.
+# Code: `Wi_minus_Qi_x = (p / (p + q)) * (Rp[0] - Rq[0])`.
+# This matches.
+
+# `la` recursion. `Pi_minus_Ai`.
+# `Wi_minus_Pi`.
+# `W - Rp = (p Rp + q Rq - (p+q)Rp) / (p+q) = q(Rq - Rp) / (p+q)`.
+# = - q/(p+q) (Rp - Rq).
+# Code: `Wi_minus_Pi_x = - (q / (p + q)) * (Rp[0] - Rq[0])`.
+# Matches.
+
+# What about the PREFACTORS in terms 3, 4, 5, 6?
+# `term3` (la decrement): `(la-1)/(2p)`.
+# `term5` (lc decrement): `lc / (2(p+q))`.
+# Standard OS:
+# Coeff of [a-1|c] is `Ni(a) / (2p)`. Here `la` is exponent? No `la` is angular momentum.
+# `la / 2p`. Correct.
+# Coeff of [a|c-1] (coupling): `Ni(c) / (2(p+q))`.
+# `lc / 2(p+q)`. Correct.
+
+# Maybe the issue is simpler.
+# `(2*alpha/pi)**0.75` in normalization.
+# What if the BASIS SET coefficients in `STO3G` class are for NORMALIZED primitives?
+# `integrals.STO3G.basis_1s` has `(alpha, d)`.
+# `d` are contraction coefficients.
+# Usually, standard basis sets (like on BSE) give coefficients for NORMALIZED primitives.
+# My `BasisFunction` code:
+# `self.norm = normalize_primitive(alpha, lmn)`
+# `self.N = self.coeff * self.norm`
+# This implies I am normalizing the primitive myelf.
+# If `self.coeff` is already assuming normalized primitives, this is correct.
+# Phi = N_contract * Sum d_i * N_prim_i * g_i.
+# `ContractedGaussian` computes `overlap` of Sum d_i N_prim_i g_i.
+# And re-normalizes.
+# This is correct.
+
+# CHECK THE NUMBERS for STO-3G Oxygen.
+# `basis_2s`:
+# (0.0751386, 0.700115),
+# (0.231031, 0.399513),
+# (0.994203, -0.0999672)
+# `basis_2p`:
+# (0.0751386, 0.391957),
+# (0.231031, 0.607684),
+# (0.994203, 0.155916)
+# Are these correct?
+# Standard STO-3G for O:
+# Exponents: 2.22766, 0.405771, 0.109818? No, that's 1s.
+# My code 1s:
+# 0.109818, 0.444635
+# 0.405771, 0.535328
+# 2.227660, 0.154329
+# Wait. The exponents should be scaled by Z^2?
+# STO-3G is a fit to Slater orbitals.
+# Slater orbital zeta.
+# Exponents alpha = alpha_sto3g_fit * zeta^2.
+# My code:
+# `alpha = alpha_prime * (zeta**2)`
+# This looks correct.
+# 1s zeta for O: 7.66.
+# 2sp zeta for O: 2.25.
+# Are the `basis_1s` values (alpha_prime) correct?
+# Standard Hehre/Stewart/Pople 1969.
+# 1s fit:
+# 0.109818, 0.444635
+# 0.405771, 0.535328
+# 2.22766, 0.154329
+# These match my code's `basis_1s`.
+
+# 2sp fit:
+# 0.0751386, 0.700115 (2s)
+# 0.231031, 0.399513 (2s)
+# 0.994203, -0.0999672 (2s)
+# 2p coeffs: 0.391957, 0.607684, 0.155916.
+# Matches my code.
+
+# So Basis Set parameters seem correct.
+
+# THE PROBLEM MUST BE IN ERI CODE LOGIC.
+# In `read` output, I saw:
+# `if ma > 0:`
+# ...
+# `if mb > 0:`
+# ...
+# `if mc > 0:`
+# ...
+# `if md > 0:`
+# ...
+# `if na > 0:`
+# ...
+# It looked sequential.
+# But inside `if ma > 0`, does it return?
+# Yes, `return res`.
+# So it handles `ma` recursion.
+# `term1` calls `get_eri(..., ma-1...)`.
+# This is fine.
+
+# Wait.
+# Look at `overlap_jit`.
+# `Sx = overlap_1d(la, lb...)`.
+# `Sy = overlap_1d(ma, mb...)`.
+# `Sz = overlap_1d(na, nb...)`.
+# `overlap_1d` handles l1, l2.
+# This assumes axes are decoupled.
+# For ERI, axes are NOT decoupled if (ab|cd) involves Boys function F_m.
+# But ERI recurrence (Obara-Saika) decouples axes?
+# No. The recurrence involves F_m(T).
+# T depends on (Rp-Rq)^2.
+# But `get_eri` recurrence reduces angular momentum on axes.
+# `[a+1 i | c d]` uses `[a i | c d]` and `[a i | c d]^(m+1)`.
+# The `m` index couples the axes.
+# So we need to reduce ALL axes to 0.
+# My code:
+# `if la > 0`: reduces la.
+# `if lb > 0`: reduces lb.
+# ...
+# `if nd > 0`: reduces nd.
+# `return prefactor * boys_vals[m]`.
+# This logic is sound, provided all cases are covered.
+
+# IS THERE A TYPO IN ERI RECURRENCE?
+# Let's check `term3` (decrement A) vs `term4` (decrement B) in `la > 0` block.
+# `term3`: `(la-1)/(2p)`. Correct.
+# `term4`: `lb / (2p)`. Correct.
+# `term5`: `lc / (2(p+q))`. Correct.
+# `term6`: `ld / (2(p+q))`. Correct.
+# This is for `la > 0`.
+
+# Let's check `if lb > 0`.
+# `term1` ... `Pi - Bi`.
+# `term3` (decrement A): `la / (2p)`.
+# `term4` (decrement B): `(lb-1) / (2p)`.
+# This seems correct.
+
+# Let's check `if lc > 0`.
+# `term1`: `Qi - Ci`.
+# `term3` (decrement C): `(lc-1)/(2q)`.
+# `term4` (decrement D): `ld / (2q)`.
+# `term5` (decrement A): `la / (2(p+q))`.
+# `term6` (decrement B): `lb / (2(p+q))`.
+# Correct.
+
+# Wait!
+# In `la > 0` block:
+# `term4` uses `val_minus` and `val_minus_m1`.
+# `val_minus` has indices `la-1, lb-1`.
+# `val_minus_m1` has indices `la-1, lb-1`.
+# This is `[a-1 b-1 | c d]`.
+# Is that correct for `term4`?
+# Obara Saika:
+# [a+1 b|cd] ... + b/2p ([a b-1|cd] - ...)
+# Wait.
+# The term is `Ni(b) / 2p * [a b-1]`.
+# But `a` is the *current* index on LHS?
+# LHS is `[la, lb...]` (where la > 0).
+# We are reducing `la`.
+# Formula: `[la, lb] = ... + lb/2p [la-1, lb-1]`.
+# My code: `la > 0`. `term4` uses `la-1, lb-1`.
+# This matches `[a-1, b-1]`.
+# YES.
+# Because the recurrence is:
+# [a+1] = ... + N(b)/2p [a, b-1].
+# So if we have `la`, we express it as `[ (la-1)+1 ]`.
+# So `a` in formula is `la-1`.
+# So term is `[la-1, b-1]`.
+# My code uses `la-1, lb-1`. Correct.
+
+# CHECK `term5` in `la > 0` block.
+# `term5` uses `lc / 2(p+q)`.
+# Target: `[a-1, c-1]`.
+# My code: `la-1, lc-1`. Correct.
+
+# It seems my ERI implementation is actually correct?
+# Why is Water energy -102?
+# O atom energy -93.03. (Ref -74.5).
+# Difference -18.5 Ha.
+# Water difference -27 Ha.
+# The error scales with system size/electrons?
+# O atom error is huge.
+# O atom has 1s2 2s2 2p4.
+# (1s, 2s) are s-orbitals.
+# (2p) are p-orbitals.
+# If s-s integrals are correct (He, H), then s-p or p-p must be wrong.
+# He energy was -2.807 (Correct). He is 1s2.
+# So s-s ERI is correct.
+# O atom error involves p-orbitals.
+# F atom error (-119 vs -98) involves more p-electrons.
+# The error comes from p-orbitals.
+
+# Where is p-orbital logic?
+# `kinetic_jit` (tested ok for p-s).
+# `overlap_jit` (tested ok).
+# `nuclear_attraction` (tested Z=1 s-s, but code logic looked same structure as ERI).
+# `eri`.
+
+# Let's check `nuclear_attraction` recursion for p.
+# `if la > 0:`
+# `term3 = (la-1)/(2p) ...`
+# `term4 = lb/(2p) ...`
+# This matches ERI `term3`, `term4` structure.
+# But `nuclear_attraction` only has 1 center pair (A,B).
+# So only `la, lb` terms.
+# And `ma, mb`, `na, nb`.
+
+# What if `normalization` of p-orbitals is wrong?
+# I calculated `1.425` for alpha=1.
+# `integrals.py`: `normalize_primitive` matches formula.
+
+# IS IT POSSIBLE THAT THE BOYS FUNCTION ARGUMENT IS WRONG?
+# ERI T_val = `rho * (Rp - Rq)^2`.
+# `rho = p*q/(p+q)`.
+# `p = a+b`. `q = c+d`.
+# This is correct.
+# Nuclear T_val = `p * (Rp - C)^2`.
+# Correct.
+
+# Let's write a script to check p-p ERI specifically against a reference value.
+# (px px | px px)
+# (px px | py py)
+# (px py | px py)
+# etc.
+# Formula for (px px | px px) unnormalized?
+# For alpha=1.
+# This might be hard to find exact analytic value quickly.
+# But we can check symmetry.
+# (px px | py py) should be equal to (px px | pz pz).
+# (px py | px py) should be small/positive.
+
+# Better:
+# Compare (s s | s s) vs (p p | p p) ratios?
+# Or check `nuclear_attraction` (p | 1/r | p).
+# For H-like 2p orbital.
+# <2p | 1/r | 2p>.
+# 2p (STO) = N r e^-zeta r.
+# STO-3G approximates this.
+# But we can check `(p|1/r|p)` for `BasisFunction` (Gaussian).
+# phi = x e^-r^2.
+# <x|1/r|x> = Integral x^2/r e^-2r^2
+# = Integral r^2 sin^2 theta cos^2 phi / r * e^-2r^2 r^2 dr dOmega
+# = Integral r^3 e^-2r^2 dr * Integral sin^3 theta dtheta * Integral cos^2 phi dphi
+# Int r^3 e^-2r^2 = 1/2 * 1/(2a)^2 * Gamma(2) = 1/2 * 1/4 = 1/8. (a=1)
+# Int cos^2 phi (0..2pi) = pi.
+# Int sin^3 theta (0..pi) = Int (1-cos^2) sin = [-cos + cos^3/3] = (1-1/3) - (-1+1/3) = 4/3.
+# Total = 1/8 * pi * 4/3 = pi/6.
+# N^2 * pi/6.
+# Norm N:
+# <x|x> = 1.
+# Int x^2 e^-2r^2 = Int r^4 sin^2 cos^2 e^-2r^2
+# Int r^4 e^-2r^2 = 3/8 sqrt(pi) / (2^2.5) ??
+# Gamma(2.5)/(2a)^2.5 = 1.329 / 5.65 = 0.23...
+# N^4 = (128/pi^3). N^2 = sqrt(128/pi^3).
+# Value = N^2 * pi/6.
+# Let's calculate this numerically.

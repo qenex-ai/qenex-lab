@@ -1,7 +1,5 @@
 
 import numpy as np
-import sys
-sys.path.append('packages/qenex-chem/src')
 import integrals as ints
 
 alpha = 1.0

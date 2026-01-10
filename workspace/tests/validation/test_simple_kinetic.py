@@ -1,9 +1,8 @@
 
 import numpy as np
-import sys
-sys.path.append('packages/qenex-chem/src')
 import integrals as ints
-from solver import ContractedGaussian, HartreeFockSolver
+from solver import HartreeFockSolver
+from integrals import ContractedGaussian
 from molecule import Molecule
 
 # H atom s-s kinetic check

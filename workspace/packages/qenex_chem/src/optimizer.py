@@ -6,8 +6,14 @@ Currently implements Numerical Gradients (Finite Difference) for robustness.
 
 import numpy as np
 from copy import deepcopy
-from solver import HartreeFockSolver
-from molecule import Molecule
+
+# Support both relative (package) and absolute (standalone) imports
+try:
+    from .solver import HartreeFockSolver
+    from .molecule import Molecule
+except ImportError:
+    from solver import HartreeFockSolver
+    from molecule import Molecule
 
 class GeometryOptimizer:
     def __init__(self, solver: HartreeFockSolver):

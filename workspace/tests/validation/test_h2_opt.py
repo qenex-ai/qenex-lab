@@ -1,33 +1,30 @@
-import sys
-import os
+"""
+Test: H2 Geometry Optimization
+Validates that the geometry optimizer can find the equilibrium bond length for H2.
+"""
 import numpy as np
-
-# Add src to path
-# Go up 2 levels from tests/validation to workspace root, then into packages
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../packages/qenex_chem/src')))
+import pytest
 
 from molecule import Molecule
 from solver import HartreeFockSolver
 from optimizer import GeometryOptimizer
 
+
 def test_h2_optimization():
+    """
+    Test that H2 geometry optimization converges to expected bond length.
+    STO-3G H2 equilibrium: ~1.34-1.39 Bohr (0.71-0.73 Angstrom)
+    """
     print("\n--- Testing Geometry Optimization: H2 ---")
     
     # Start H2 slightly stretched (Equilibrium is ~0.74 A = ~1.4 Bohr)
-    # 1.0 Angstrom = 1.8897 Bohr
-    # Start at 1.0 A (1.89 Bohr) to see if it shrinks
-    
-    # Using Bohr directly for simplicity
-    # Atom 1 at origin, Atom 2 at 1.8 (stretched)
+    # Start at 1.8 Bohr (stretched) to see if it shrinks
     mol = Molecule([
         ('H', (0.0, 0.0, 0.0)),
         ('H', (0.0, 0.0, 1.8))
     ])
     
     solver = HartreeFockSolver()
-    # Note: Basis set handling was refactored. The solver typically uses STO-3G by default internally,
-    # or takes it in compute_energy via molecule. 
-    # Current implementation in solver.py doesn't take init args.
     opt = GeometryOptimizer(solver)
     
     # Run Optimization
@@ -39,11 +36,10 @@ def test_h2_optimization():
     
     print(f"Final Bond Length: {final_dist:.4f} Bohr")
     
-    # STO-3G H2 Equilibrium is usually around 1.34 - 1.39 Bohr (0.71-0.73 A)
-    if 1.30 < final_dist < 1.45:
-        print("PASS: H2 bond length converged to reasonable range.")
-    else:
-        print(f"FAIL: H2 bond length {final_dist:.4f} is outside expected range (1.30-1.45).")
+    # STO-3G H2 Equilibrium is usually around 1.34 - 1.39 Bohr
+    assert 1.30 < final_dist < 1.50, f"H2 bond length {final_dist:.4f} outside expected range (1.30-1.50)"
+    print("PASS: H2 bond length converged to reasonable range.")
+
 
 if __name__ == "__main__":
     test_h2_optimization()

@@ -1,0 +1,48 @@
+[package]
+name = "qenex-tui"
+version = "1.4.0-infinity"
+edition = "2021"
+authors = ["QENEX LAB"]
+description = "High-performance Terminal UI for QENEX LAB OMNI-AWARE system"
+
+[dependencies]
+# Async runtime for non-blocking operations
+tokio = { version = "1.42", features = ["full"] }
+tokio-stream = "0.1"
+
+# TUI rendering (ratatui - modern fork of tui-rs)
+ratatui = "0.29"
+crossterm = "0.28"
+
+# HTTP client for backend communication
+reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest-eventsource = "0.6"
+
+# JSON parsing
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async channels for multithreading
+tokio-util = { version = "0.7", features = ["codec"] }
+futures = "0.3"
+
+# Time handling
+chrono = "0.4"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging (optional, for debugging)
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1

@@ -1,0 +1,52 @@
+
+# FOUND THE BUG.
+# In `integrals.py`:
+# `if ma > 0:`
+#    ...
+#    `res = term1 + term2`  <-- MISSING TERMS 3, 4, 5, 6 for angular momentum reduction on Y axis!
+#    `return res`
+
+# The code says:
+# "For brevity/token limit in this huge function, let's assume we handle s/p orbitals mostly. Real implementation needs full recursion. res = term1 + term2 # simplified for now"
+
+# THIS IS THE BUG.
+# For s/p orbitals, if `ma > 0` (e.g. py orbital), we MUST include the decrement terms (coupling to s-orbitals).
+# If we omit them, we are effectively setting `Ni / 2p` terms to zero.
+# These terms correspond to the kinetic/overlap-like contributions in the recurrence.
+# Without them, integrals involving p-orbitals (specifically y/z components or higher x components) will be WRONG.
+# Specifically, for (px px | py py), we have `la=1, lb=1` (handled correctly with full recurrence) and `mc=1, md=1`.
+# When reducing `mc`, we hit `if mc > 0`.
+# It calculates `term1 + term2`.
+# But `term3` (reducing `mc`) involves `mc / 2q`.
+# `term4` (reducing `md`) involves `md / 2q`.
+# These are POSITIVE terms.
+# By omitting them, we underestimate the integral.
+# (px px | py py) -> (ss | ss) - (ss | pp_reduced) ...
+# Actually, the recurrence is:
+# [a c+1] = ... + c/2q ([a c] - [a c]^(m+1)) ...
+# If `c` starts at 0 (s-orbital), we don't need these terms.
+# But for p-orbitals (c=1), we strictly need them to reduce to s-orbitals.
+# If omitted, we miss the `(ss|ss)`-like contributions that come from the p-character.
+
+# ERI (px px | py py) should be non-zero.
+# My test script gave 0.000000.
+# Because `mc=1` reduction only kept `term1` and `term2`.
+# `term1 ~ (Rq - C)`. If C=Rq (one center), this is zero.
+# `term2 ~ (W - Rq)`. If one center, W=Rq. Zero.
+# So `term1+term2` is ZERO for single center p-orbitals!
+# The entire value comes from `term3, term4...` (the 1/2p terms).
+# Since they were omitted, the result was 0.
+
+# FIX:
+# Implement the full recurrence for Y and Z axes, copying the logic from X axis but with appropriate indices (ma, mb, mc, md) and (na, nb, nc, nd).
+
+# I need to edit `packages/qenex-chem/src/integrals.py`.
+# I will replace the `if ma > 0:` blocks (and mb, mc, md, na...) with the full logic.
+# Since the logic is repetitive, I can define a helper or just write it out.
+# Given the previous code was "simplified", I must expand it.
+
+# Helper function `recurse(axis_index, axis_name)` inside `get_eri`?
+# No, explicit is better to avoid confusion with variable capture in recursion.
+# I will just copy-paste the logic from `la/lb/lc/ld` blocks to `ma...` and `na...` blocks, changing `la->ma`, `Rp[0]->Rp[1]`, etc.
+
+pass

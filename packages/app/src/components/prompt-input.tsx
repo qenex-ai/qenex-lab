@@ -293,13 +293,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
 
-    event.preventDefault()
-    event.stopPropagation()
+    // Don't prevent default if we're not handling files
+    // This allows default text paste behavior to work naturally
 
     const items = Array.from(clipboardData.items)
     const imageItems = items.filter((item) => ACCEPTED_FILE_TYPES.includes(item.type))
 
     if (imageItems.length > 0) {
+      event.preventDefault()
+      event.stopPropagation()
       for (const item of imageItems) {
         const file = item.getAsFile()
         if (file) await addImageAttachment(file)
@@ -307,8 +309,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
+    // For plain text, we want to capture it and insert it using our part system
+    // but we need to prevent default to avoid double insertion or formatting issues
     const plainText = clipboardData.getData("text/plain") ?? ""
-    addPart({ type: "text", content: plainText, start: 0, end: 0 })
+    if (plainText) {
+      event.preventDefault()
+      event.stopPropagation()
+      addPart({ type: "text", content: plainText, start: 0, end: 0 })
+    }
   }
 
   const handleGlobalDragOver = (event: DragEvent) => {

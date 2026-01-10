@@ -64,7 +64,7 @@ const unsafeCSS = `
 
 export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) {
   return {
-    theme: "OpenCode",
+    theme: "QENEX LAB",
     themeType: "system",
     disableLineNumbers: false,
     overflow: "wrap",
