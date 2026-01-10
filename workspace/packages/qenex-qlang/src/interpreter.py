@@ -1013,6 +1013,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('scout '):
+                 self._handle_scout(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2261,6 +2266,52 @@ class QLangInterpreter:
         
         dispatcher = self.context["_polyglot_dispatcher"]
         handle_polyglot_command(dispatcher, line, self.context)
+    
+    def _handle_scout(self, line: str):
+        """
+        Handle Scout 10M commands for scientific reasoning with massive context.
+        
+        Scout 17B is a specialized Llama 4 MoE model with 10M token context.
+        
+        Available commands:
+            scout reason "query"           - Deep chain-of-thought reasoning
+            scout synthesize "query"       - Cross-document synthesis
+            scout prove "statement"        - Formal proof construction
+            scout hypothesize "domain"     - Generate novel hypotheses
+            scout verify "claim"           - Verify against context
+            scout analyze "subject"        - Comprehensive analysis
+            
+            scout context load <file>      - Load file into 10M context
+            scout context loaddir <dir>    - Load directory
+            scout context stats            - Show context statistics
+            scout context clear            - Clear context
+            scout context list             - List loaded chunks
+            scout status                   - Show Scout status
+        
+        Args:
+            line: Command line starting with 'scout'
+        """
+        try:
+            from scout_10m import ScoutReasoner, handle_scout_command
+        except ImportError:
+            try:
+                import sys
+                import os
+                scout_dir = os.path.dirname(os.path.abspath(__file__))
+                if scout_dir not in sys.path:
+                    sys.path.insert(0, scout_dir)
+                from scout_10m import ScoutReasoner, handle_scout_command
+            except ImportError as e:
+                print(f"❌ Scout Error: Could not load Scout module: {e}")
+                return
+        
+        # Initialize Scout reasoner on first use (lazy loading)
+        if "_scout_reasoner" not in self.context:
+            print("   [Q-Lang] Initializing Scout 10M Reasoner...")
+            self.context["_scout_reasoner"] = ScoutReasoner(verbose=True)
+        
+        reasoner = self.context["_scout_reasoner"]
+        handle_scout_command(reasoner, line, self.context)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
