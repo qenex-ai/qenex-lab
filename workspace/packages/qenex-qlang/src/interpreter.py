@@ -998,6 +998,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('verify '):
+                 self._handle_verification(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -1717,6 +1722,243 @@ class QLangInterpreter:
         
         except Exception as e:
             print(f"❌ Discovery Error: {e}")
+
+    def _handle_verification(self, line: str):
+        """
+        Handle hypothesis verification commands.
+        
+        Syntax:
+            verify hypothesis [id=<id>] [statement="<text>"] [domain=<domain>] [math="<formula>"]
+            verify last                    # Verify last generated hypotheses
+            verify dimensional "<equation>"
+            verify bounds <quantity>=<value>
+            verify report [path=<filepath>]
+        """
+        try:
+            from discovery.verification import (
+                HypothesisVerifier, DimensionalAnalyzer, PhysicalConstraintChecker,
+                VerificationStatus
+            )
+        except ImportError as e:
+            print(f"❌ Verification Error: Could not load verification module: {e}")
+            return
+        
+        parts = line.split()
+        
+        if len(parts) < 2:
+            print("❌ Usage: verify hypothesis|last|dimensional|bounds|report <args>")
+            return
+        
+        subcmd = parts[1]
+        
+        # Create verifier if not already in context
+        if "_verifier" not in self.context:
+            self.context["_verifier"] = HypothesisVerifier(verbose=False)
+        
+        verifier = self.context["_verifier"]
+        
+        try:
+            if subcmd == "hypothesis":
+                # verify hypothesis id=... statement="..." domain=... math="..."
+                hyp_id = None
+                statement = None
+                domain = None
+                math_form = None
+                parameters = []
+                source_domain = None
+                
+                # Parse key=value arguments
+                rest = " ".join(parts[2:])
+                
+                # Extract quoted strings first
+                import re as re_mod
+                quoted = re_mod.findall(r'(\w+)="([^"]*)"', rest)
+                for key, val in quoted:
+                    if key == "statement":
+                        statement = val
+                    elif key == "math":
+                        math_form = val
+                    elif key == "id":
+                        hyp_id = val
+                    elif key == "domain":
+                        domain = val
+                    elif key == "source":
+                        source_domain = val
+                
+                # Extract non-quoted key=value pairs
+                for p in parts[2:]:
+                    if "=" in p and not p.startswith('"'):
+                        key, val = p.split("=", 1)
+                        if key == "id" and not hyp_id:
+                            hyp_id = val
+                        elif key == "domain" and not domain:
+                            domain = val
+                        elif key == "source" and not source_domain:
+                            source_domain = val
+                        elif key == "params":
+                            parameters = val.split(",")
+                
+                if not statement:
+                    print("❌ Usage: verify hypothesis statement=\"<text>\" domain=<domain> [math=\"<formula>\"]")
+                    return
+                
+                if not hyp_id:
+                    hyp_id = f"manual_{len(verifier.verification_history)+1}"
+                
+                if not domain:
+                    domain = "unknown"
+                
+                print(f"   [Verify] Verifying hypothesis: {hyp_id}")
+                
+                report = verifier.verify_hypothesis(
+                    hypothesis_id=hyp_id,
+                    statement=statement,
+                    domain=domain,
+                    mathematical_form=math_form,
+                    parameters=parameters if parameters else None,
+                    source_domain=source_domain
+                )
+                
+                print(report.summary())
+                self.context["last_verification"] = report
+                
+                status_symbol = {
+                    VerificationStatus.PASSED: "✅",
+                    VerificationStatus.FAILED: "❌",
+                    VerificationStatus.WARNING: "⚠️",
+                    VerificationStatus.UNCERTAIN: "❓",
+                    VerificationStatus.SKIPPED: "⏭️",
+                }[report.overall_status]
+                
+                print(f"\n{status_symbol} Verification complete: {report.overall_status.name}")
+            
+            elif subcmd == "last":
+                # verify last - verify last generated hypotheses
+                if "last_hypotheses" not in self.context:
+                    print("❌ No hypotheses to verify. Run 'hypothesize' first.")
+                    return
+                
+                hypotheses = self.context["last_hypotheses"]
+                print(f"   [Verify] Verifying {len(hypotheses)} hypotheses...")
+                
+                reports = verifier.batch_verify(hypotheses)
+                
+                passed = sum(1 for r in reports if r.overall_status == VerificationStatus.PASSED)
+                failed = sum(1 for r in reports if r.overall_status == VerificationStatus.FAILED)
+                warnings = sum(1 for r in reports if r.overall_status == VerificationStatus.WARNING)
+                
+                print(f"\n   VERIFICATION SUMMARY")
+                print(f"   ✅ Passed: {passed}")
+                print(f"   ❌ Failed: {failed}")
+                print(f"   ⚠️ Warnings: {warnings}")
+                
+                # Show details for any failures
+                failures = [r for r in reports if r.overall_status == VerificationStatus.FAILED]
+                if failures:
+                    print(f"\n   Failed verifications:")
+                    for r in failures[:3]:  # Show first 3
+                        print(f"     - {r.hypothesis_id}: {r.hypothesis_statement[:50]}...")
+                        for c in r.checks:
+                            if c.status == VerificationStatus.FAILED:
+                                print(f"       → {c.message}")
+                
+                self.context["last_verifications"] = reports
+            
+            elif subcmd == "dimensional":
+                # verify dimensional "<equation>"
+                analyzer = DimensionalAnalyzer()
+                
+                # Extract equation
+                equation = None
+                rest = " ".join(parts[2:])
+                
+                if rest.startswith('"') and rest.endswith('"'):
+                    equation = rest[1:-1]
+                else:
+                    equation = rest
+                
+                if not equation:
+                    print("❌ Usage: verify dimensional \"<equation>\"")
+                    print("   Example: verify dimensional \"E = m * c^2\"")
+                    return
+                
+                print(f"   [Dimensional] Analyzing: {equation}")
+                
+                parsed = analyzer.parse_mathematical_form(equation)
+                print(f"   LHS quantities: {parsed['lhs']} with exponents {parsed['lhs_exponents']}")
+                print(f"   RHS quantities: {parsed['rhs']} with exponents {parsed['rhs_exponents']}")
+                
+                if parsed['lhs'] and parsed['rhs']:
+                    result = analyzer.check_equation_balance(
+                        parsed['lhs'], parsed['rhs'],
+                        parsed['lhs_exponents'], parsed['rhs_exponents']
+                    )
+                    
+                    status_symbol = "✅" if result.status == VerificationStatus.PASSED else "❌"
+                    print(f"\n   {status_symbol} {result.message}")
+                    
+                    if result.suggestions:
+                        print("   Suggestions:")
+                        for s in result.suggestions:
+                            print(f"     → {s}")
+                else:
+                    print("   ⚠️ Could not parse equation into LHS and RHS")
+            
+            elif subcmd == "bounds":
+                # verify bounds <quantity>=<value>
+                checker = PhysicalConstraintChecker()
+                
+                quantity = None
+                value = None
+                
+                for p in parts[2:]:
+                    if "=" in p:
+                        quantity, val_str = p.split("=", 1)
+                        try:
+                            value = float(val_str)
+                        except ValueError:
+                            print(f"❌ Could not parse value: {val_str}")
+                            return
+                
+                if not quantity or value is None:
+                    print("❌ Usage: verify bounds <quantity>=<value>")
+                    print(f"   Available quantities: {list(checker.PHYSICAL_BOUNDS.keys())[:10]}...")
+                    return
+                
+                print(f"   [Bounds] Checking {quantity} = {value}")
+                
+                result = checker.check_value_bounds(quantity, value)
+                
+                status_symbol = {
+                    VerificationStatus.PASSED: "✅",
+                    VerificationStatus.FAILED: "❌",
+                    VerificationStatus.UNCERTAIN: "❓",
+                }[result.status]
+                
+                print(f"   {status_symbol} {result.message}")
+                
+                if result.status == VerificationStatus.UNCERTAIN:
+                    print(f"   Available quantities: {list(checker.PHYSICAL_BOUNDS.keys())}")
+            
+            elif subcmd == "report":
+                # verify report [path=<filepath>]
+                filepath = "/opt/qenex_lab/workspace/reports/verification_report.json"
+                
+                for p in parts[2:]:
+                    if p.startswith("path="):
+                        filepath = p.split("=", 1)[1]
+                
+                verifier.export_reports(filepath)
+                print(f"✅ Exported {len(verifier.verification_history)} verification reports to {filepath}")
+            
+            else:
+                print(f"❌ Unknown verify subcommand: {subcmd}")
+                print("   Available: hypothesis, last, dimensional, bounds, report")
+        
+        except Exception as e:
+            print(f"❌ Verification Error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _handle_optimize(self, line: str):
         """
