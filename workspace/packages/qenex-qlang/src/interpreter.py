@@ -1279,6 +1279,193 @@ class QLangInterpreter:
                  except Exception as e:
                      print(f"❌ Physics Error: {e}")
 
+            elif domain == "climate":
+                # simulate climate [model] [param=value ...]
+                # E.g. simulate climate ebm co2=450 sensitivity=3.0
+                # E.g. simulate climate carbon years=100
+                try:
+                    from discovery.domain_simulators import ClimateSimulator
+                    sim = ClimateSimulator()
+                    
+                    model = "ebm"  # default: energy balance model
+                    params = {}
+                    
+                    idx = 2
+                    while idx < len(parts):
+                        if parts[idx] in ["ebm", "carbon", "ice", "amoc"]:
+                            model = parts[idx]
+                            idx += 1
+                        elif "=" in parts[idx]:
+                            k, v = parts[idx].split("=", 1)
+                            try:
+                                params[k] = float(v)
+                            except ValueError:
+                                params[k] = v
+                            idx += 1
+                        else:
+                            idx += 1
+                    
+                    # Fill in defaults for missing params
+                    for pname, (lo, hi) in sim.parameter_bounds.items():
+                        if pname not in params:
+                            params[pname] = (lo + hi) / 2  # Use midpoint as default
+                    
+                    if not silent:
+                        print(f"   [Climate] Running {model} model...")
+                        print(f"   [Climate] CO2={params.get('co2_ppm', 420):.1f} ppm, Sensitivity={params.get('climate_sensitivity', 3.0):.1f}°C")
+                    
+                    result = sim.simulate(params)
+                    
+                    # Store results
+                    T_eq = result.outputs["equilibrium_temperature_K"]
+                    warming = result.outputs["warming_above_preindustrial_K"]
+                    
+                    self.context["equilibrium_temp"] = QValue(T_eq, Dimensions(temperature=1))
+                    self.context["warming"] = QValue(warming, Dimensions(temperature=1))
+                    self.context["last_result"] = result.outputs
+                    
+                    if not silent:
+                        print(f"✅ Equilibrium Temperature = {T_eq:.2f} K ({T_eq-273.15:.2f}°C)")
+                        print(f"✅ Warming vs Pre-industrial = {warming:.2f}°C")
+                        if not result.physical_validity:
+                            print(f"⚠️  Physics warnings: {result.validation_messages}")
+                
+                except ImportError:
+                    print("❌ Climate simulator not available.")
+                except Exception as e:
+                    print(f"❌ Climate Error: {e}")
+
+            elif domain == "neuro" or domain == "neuroscience":
+                # simulate neuro [model] [param=value ...]
+                # E.g. simulate neuro network n_neurons=100 connectivity=0.1
+                # E.g. simulate neuro lif input=20
+                try:
+                    from discovery.domain_simulators import NeuroscienceSimulator
+                    sim = NeuroscienceSimulator()
+                    
+                    model = "network"  # default: spiking network
+                    params = {}
+                    
+                    idx = 2
+                    while idx < len(parts):
+                        if parts[idx] in ["network", "lif", "hh", "izhikevich"]:
+                            model = parts[idx]
+                            idx += 1
+                        elif "=" in parts[idx]:
+                            k, v = parts[idx].split("=", 1)
+                            try:
+                                params[k] = float(v)
+                            except ValueError:
+                                params[k] = v
+                            idx += 1
+                        else:
+                            idx += 1
+                    
+                    # Fill in defaults
+                    for pname, (lo, hi) in sim.parameter_bounds.items():
+                        if pname not in params:
+                            params[pname] = (lo + hi) / 2
+                    
+                    if not silent:
+                        print(f"   [Neuro] Running {model} simulation...")
+                        print(f"   [Neuro] E/I ratio={params.get('e_i_ratio', 0.2):.2f}, Connectivity={params.get('connectivity', 0.1):.2f}")
+                    
+                    result = sim.simulate(params)
+                    
+                    # Store results
+                    rate = result.outputs["mean_firing_rate_Hz"]
+                    cv = result.outputs["cv_isi"]
+                    
+                    self.context["firing_rate"] = QValue(rate, Dimensions(time=-1))
+                    self.context["cv_isi"] = QValue(cv, Dimensions())
+                    self.context["last_result"] = result.outputs
+                    
+                    if not silent:
+                        print(f"✅ Mean Firing Rate = {rate:.2f} Hz")
+                        print(f"✅ CV of ISI = {cv:.2f} (1.0 = Poisson)")
+                        if rate > 100:
+                            print("⚠️  High firing rate: potential pathological state")
+                        elif rate < 1:
+                            print("⚠️  Low firing rate: network may be nearly silent")
+                
+                except ImportError:
+                    print("❌ Neuroscience simulator not available.")
+                except Exception as e:
+                    print(f"❌ Neuro Error: {e}")
+
+            elif domain == "astro" or domain == "astrophysics":
+                # simulate astro [model] [param=value ...]
+                # E.g. simulate astro star mass=1.5
+                # E.g. simulate astro planet star_mass=1.0 distance=1.0 albedo=0.3
+                try:
+                    from discovery.domain_simulators import AstrophysicsSimulator
+                    sim = AstrophysicsSimulator()
+                    
+                    model = "planet"  # default: exoplanet habitability
+                    params = {}
+                    
+                    idx = 2
+                    while idx < len(parts):
+                        if parts[idx] in ["star", "planet", "cosmology", "hz"]:
+                            model = parts[idx]
+                            idx += 1
+                        elif "=" in parts[idx]:
+                            k, v = parts[idx].split("=", 1)
+                            # Map common aliases
+                            key_map = {"mass": "stellar_mass", "distance": "planet_distance", 
+                                       "radius": "planet_radius", "star_mass": "stellar_mass"}
+                            k = key_map.get(k, k)
+                            try:
+                                params[k] = float(v)
+                            except ValueError:
+                                params[k] = v
+                            idx += 1
+                        else:
+                            idx += 1
+                    
+                    # Fill in defaults
+                    for pname, (lo, hi) in sim.parameter_bounds.items():
+                        if pname not in params:
+                            if pname == "stellar_mass":
+                                params[pname] = 1.0  # Solar mass default
+                            elif pname == "planet_distance":
+                                params[pname] = 1.0  # 1 AU default
+                            else:
+                                params[pname] = (lo + hi) / 2
+                    
+                    if not silent:
+                        print(f"   [Astro] Running {model} simulation...")
+                        print(f"   [Astro] Star mass={params.get('stellar_mass', 1.0):.2f} M☉, Distance={params.get('planet_distance', 1.0):.2f} AU")
+                    
+                    result = sim.simulate(params)
+                    
+                    # Store results
+                    T_surface = result.outputs["surface_temp_K"]
+                    in_hz = result.outputs["in_habitable_zone"]
+                    L = result.outputs["stellar_luminosity_Lsun"]
+                    
+                    self.context["surface_temp"] = QValue(T_surface, Dimensions(temperature=1))
+                    self.context["luminosity"] = QValue(L, Dimensions())
+                    self.context["in_hz"] = QValue(1.0 if in_hz else 0.0, Dimensions())
+                    self.context["last_result"] = result.outputs
+                    
+                    if not silent:
+                        print(f"✅ Stellar Luminosity = {L:.2f} L☉")
+                        print(f"✅ Planet Surface Temp = {T_surface:.1f} K ({T_surface-273.15:.1f}°C)")
+                        print(f"✅ In Habitable Zone: {'YES ✓' if in_hz else 'NO ✗'}")
+                        hz_in = result.outputs["hz_inner_AU"]
+                        hz_out = result.outputs["hz_outer_AU"]
+                        print(f"   Habitable zone: {hz_in:.2f} - {hz_out:.2f} AU")
+                
+                except ImportError:
+                    print("❌ Astrophysics simulator not available.")
+                except Exception as e:
+                    print(f"❌ Astro Error: {e}")
+
+            else:
+                print(f"❌ Unknown simulation domain: {domain}")
+                print("   Available: chemistry, biology, physics, climate, neuro, astro")
+
         except Exception as e:
             print(f"❌ SIMULATION ERROR: {e}")
 

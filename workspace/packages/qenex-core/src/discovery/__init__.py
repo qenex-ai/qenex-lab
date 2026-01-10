@@ -867,8 +867,42 @@ def hypothesize(statement: str, domain: str = "general") -> Hypothesis:
     return engine.generate_hypothesis(statement)
 
 
+# Import universal engine and domain simulators
+try:
+    from .universal_engine import (
+        UniversalDiscoveryEngine,
+        ScientificDomain,
+        BayesianOptimizer,
+        CrossDomainAnalyzer,
+        UniversalKnowledgeGraph,
+        Discovery as UniversalDiscovery,
+    )
+    UNIVERSAL_ENGINE_AVAILABLE = True
+except ImportError:
+    UNIVERSAL_ENGINE_AVAILABLE = False
+    UniversalDiscoveryEngine = None
+    ScientificDomain = None
+
+try:
+    from .domain_simulators import (
+        DomainSimulator,
+        SimulatorRegistry,
+        SimulationResult,
+        CrossDomainDiscoveryRunner,
+        ClimateSimulator,
+        NeuroscienceSimulator,
+        AstrophysicsSimulator,
+        QuantumChemistrySimulator,
+    )
+    DOMAIN_SIMULATORS_AVAILABLE = True
+except ImportError:
+    DOMAIN_SIMULATORS_AVAILABLE = False
+    SimulatorRegistry = None
+
+
 # Export
 __all__ = [
+    # Core discovery
     'DiscoveryMode',
     'HypothesisStatus',
     'ConfidenceLevel',
@@ -882,4 +916,22 @@ __all__ = [
     'discover',
     'observe',
     'hypothesize',
+    # Universal Engine
+    'UniversalDiscoveryEngine',
+    'ScientificDomain',
+    'BayesianOptimizer',
+    'CrossDomainAnalyzer',
+    'UniversalKnowledgeGraph',
+    'UniversalDiscovery',
+    'UNIVERSAL_ENGINE_AVAILABLE',
+    # Domain Simulators
+    'DomainSimulator',
+    'SimulatorRegistry',
+    'SimulationResult',
+    'CrossDomainDiscoveryRunner',
+    'ClimateSimulator',
+    'NeuroscienceSimulator',
+    'AstrophysicsSimulator',
+    'QuantumChemistrySimulator',
+    'DOMAIN_SIMULATORS_AVAILABLE',
 ]

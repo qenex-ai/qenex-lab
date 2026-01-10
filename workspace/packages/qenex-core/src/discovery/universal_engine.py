@@ -610,6 +610,12 @@ class UniversalDiscoveryEngine:
     4. SYNTHESIZE - Cross-domain analysis for breakthrough insights
     5. DISCOVER - Produce validated discoveries with full provenance
     6. PUBLISH - Generate papers, code, and reproducibility artifacts
+    
+    Domain Simulators:
+    - Climate Science (EBM, carbon cycle, ice sheets)
+    - Neuroscience (spiking networks, STDP, criticality)
+    - Astrophysics (stellar physics, habitability, cosmology)
+    - Quantum Chemistry (HF, molecular geometry)
     """
     
     def __init__(self, verbose: bool = True):
@@ -620,13 +626,181 @@ class UniversalDiscoveryEngine:
         self.discoveries: Dict[str, Discovery] = {}
         self.scout_cli_path = "/opt/qenex/scout-cli/target/release/scout"
         
+        # Load domain simulators
+        self.simulators = {}
+        self._load_domain_simulators()
+        
         if verbose:
             print("=" * 60)
             print("QENEX Universal Discovery Engine Initialized")
             print("=" * 60)
             print(f"Knowledge bases: {list(self.knowledge_graph.connectors.keys())}")
+            print(f"Domain simulators: {list(self.simulators.keys())}")
             print(f"Scout CLI: {self.scout_cli_path}")
             print("=" * 60)
+    
+    def _load_domain_simulators(self):
+        """Load domain-specific simulators for cross-domain discovery."""
+        try:
+            from .domain_simulators import SimulatorRegistry
+            self.simulators = SimulatorRegistry.get_all()
+        except ImportError:
+            # Fallback: simulators not available
+            self.simulators = {}
+    
+    def explore_domain(self, domain_name: str, n_samples: int = 20) -> List[Dict]:
+        """
+        Explore a scientific domain using its simulator.
+        
+        Args:
+            domain_name: Name of domain (climate, neuroscience, astrophysics, quantum_chemistry)
+            n_samples: Number of parameter samples to explore
+        
+        Returns:
+            List of simulation results
+        """
+        if domain_name not in self.simulators:
+            raise ValueError(f"Unknown domain: {domain_name}. Available: {list(self.simulators.keys())}")
+        
+        simulator = self.simulators[domain_name]
+        results = []
+        
+        if self.verbose:
+            print(f"\n[EXPLORE] Domain: {domain_name}")
+            print(f"  Parameters: {list(simulator.parameter_bounds.keys())}")
+        
+        for i in range(n_samples):
+            # Random parameters within bounds
+            params = {
+                name: np.random.uniform(low, high)
+                for name, (low, high) in simulator.parameter_bounds.items()
+            }
+            
+            result = simulator.simulate(params)
+            results.append(result.to_dict())
+            
+            if self.verbose and (i + 1) % 10 == 0:
+                print(f"  Progress: {i+1}/{n_samples}")
+        
+        if self.verbose:
+            valid = sum(1 for r in results if r["physical_validity"])
+            print(f"  Completed: {len(results)} samples, {valid} valid")
+        
+        return results
+    
+    def optimize_domain(self, domain_name: str, n_iterations: int = 50) -> Dict:
+        """
+        Optimize parameters in a domain using Bayesian optimization.
+        
+        Args:
+            domain_name: Name of domain
+            n_iterations: Number of optimization iterations
+        
+        Returns:
+            Best parameters and objective value
+        """
+        if domain_name not in self.simulators:
+            raise ValueError(f"Unknown domain: {domain_name}")
+        
+        simulator = self.simulators[domain_name]
+        
+        if self.verbose:
+            print(f"\n[OPTIMIZE] Domain: {domain_name}")
+            print(f"  Iterations: {n_iterations}")
+        
+        # Create objective function
+        def objective(x: np.ndarray) -> float:
+            params = simulator.array_to_params(x)
+            result = simulator.simulate(params)
+            return result.objective_value if result.physical_validity else -1e10
+        
+        # Run Bayesian optimization
+        best_x, best_y = self.optimize_parameters(
+            objective_fn=objective,
+            bounds=simulator.get_bounds_array(),
+            n_iterations=n_iterations
+        )
+        
+        # Get final result
+        best_params = simulator.array_to_params(best_x)
+        best_result = simulator.simulate(best_params)
+        
+        if self.verbose:
+            print(f"  Best objective: {best_y:.4f}")
+            print(f"  Best parameters: {best_params}")
+        
+        return {
+            "domain": domain_name,
+            "best_parameters": best_params,
+            "best_objective": best_y,
+            "best_result": best_result.to_dict(),
+        }
+    
+    def run_cross_domain_discovery(self, n_samples: int = 10) -> Dict:
+        """
+        Run discovery across all available domains, looking for patterns.
+        
+        Args:
+            n_samples: Samples per domain
+        
+        Returns:
+            Dictionary with results and cross-domain patterns
+        """
+        if self.verbose:
+            print("\n" + "=" * 60)
+            print("CROSS-DOMAIN DISCOVERY")
+            print("=" * 60)
+        
+        all_results = {}
+        
+        # Explore each domain
+        for domain_name in self.simulators.keys():
+            all_results[domain_name] = self.explore_domain(domain_name, n_samples)
+        
+        # Find cross-domain patterns
+        patterns = self._find_cross_domain_patterns(all_results)
+        
+        if self.verbose:
+            print("\n" + "=" * 60)
+            print("CROSS-DOMAIN PATTERNS")
+            print("=" * 60)
+            for pattern in patterns:
+                print(f"\n  Pattern: {pattern['name']}")
+                print(f"  Domains: {pattern['domains']}")
+                print(f"  Strength: {pattern['strength']:.2f}")
+        
+        return {
+            "domain_results": all_results,
+            "patterns": patterns,
+            "n_domains": len(all_results),
+            "n_patterns": len(patterns),
+        }
+    
+    def _find_cross_domain_patterns(self, results: Dict[str, List[Dict]]) -> List[Dict]:
+        """Analyze results for cross-domain patterns."""
+        patterns = []
+        
+        # Pattern 1: Criticality (bimodal distributions)
+        domains_with_criticality = []
+        for domain, domain_results in results.items():
+            objectives = [r["objective_value"] for r in domain_results if r["physical_validity"]]
+            if len(objectives) > 5:
+                # Check for high variance (potential phase transition)
+                if np.std(objectives) > 0.5 * abs(np.mean(objectives) + 1e-10):
+                    domains_with_criticality.append(domain)
+        
+        if len(domains_with_criticality) >= 2:
+            patterns.append({
+                "name": "Criticality/Phase Transitions",
+                "domains": domains_with_criticality,
+                "strength": len(domains_with_criticality) / len(results),
+                "description": "High variance in objective suggests critical behavior",
+            })
+        
+        # Pattern 2: Optimization landscape (correlation between parameters)
+        # This would require more sophisticated analysis
+        
+        return patterns
     
     def generate_hypothesis(self, 
                             domain: ScientificDomain,
