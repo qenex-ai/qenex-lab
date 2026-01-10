@@ -1003,6 +1003,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('julia '):
+                 self._handle_julia(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2164,6 +2169,47 @@ class QLangInterpreter:
             # This includes blocked builtins like __import__, exec, eval, etc.
             if "__import__" in str(e) or "exec" in str(e) or "is not defined" in str(e):
                 raise
+    
+    def _handle_julia(self, line: str):
+        """
+        Handle Julia commands for high-performance numerics.
+        
+        Available commands:
+            julia benchmark N        - Run matrix multiply benchmark (NxN)
+            julia tensor N           - Run tensor contraction (NxN)
+            julia matmul A B [C]     - Matrix multiply A * B -> C
+            julia eigen M            - Compute eigenvalues/eigenvectors
+            julia solve A b [x]      - Solve linear system Ax = b
+            julia svd M              - Singular value decomposition
+            julia attention Q K V    - Scaled dot-product attention
+            julia fft x              - Fast Fourier Transform
+            julia run "code"         - Execute custom Julia code
+        
+        Args:
+            line: Command line starting with 'julia'
+        """
+        try:
+            from julia_bridge import JuliaBridge, handle_julia_command
+        except ImportError:
+            try:
+                # Try relative import path
+                import sys
+                import os
+                bridge_dir = os.path.dirname(os.path.abspath(__file__))
+                if bridge_dir not in sys.path:
+                    sys.path.insert(0, bridge_dir)
+                from julia_bridge import JuliaBridge, handle_julia_command
+            except ImportError as e:
+                print(f"❌ Julia Error: Could not load Julia bridge: {e}")
+                return
+        
+        # Initialize bridge on first use (lazy loading)
+        if "_julia_bridge" not in self.context:
+            print("   [Q-Lang] Initializing Julia bridge...")
+            self.context["_julia_bridge"] = JuliaBridge(verbose=False)
+        
+        bridge = self.context["_julia_bridge"]
+        handle_julia_command(bridge, line, self.context)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
