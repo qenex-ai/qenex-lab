@@ -993,6 +993,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('hypothesize ') or line.startswith('discover '):
+                 self._handle_discovery(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -1503,6 +1508,215 @@ class QLangInterpreter:
                  
         except Exception as e:
              print(f"❌ Prover Error: {e}")
+
+    def _handle_discovery(self, line: str):
+        """
+        Handle hypothesis generation and discovery commands.
+        
+        Syntax:
+            hypothesize pattern <pattern_name> domain <domain_name>
+            hypothesize analogy source=<domain> phenomenon="<text>" target=<domain>
+            hypothesize question domain=<domain> index=<n>
+            discover crossdomain [n_per_pair=2]
+            discover top [n=5]
+        """
+        try:
+            from discovery.hypothesis_generator import (
+                AutomatedHypothesisGenerator, UniversalPattern, DOMAIN_KNOWLEDGE
+            )
+        except ImportError as e:
+            print(f"❌ Discovery Error: Could not load hypothesis generator: {e}")
+            return
+        
+        parts = line.split()
+        cmd = parts[0]  # 'hypothesize' or 'discover'
+        
+        # Create generator if not already in context
+        if "_hypothesis_generator" not in self.context:
+            self.context["_hypothesis_generator"] = AutomatedHypothesisGenerator(verbose=False)
+        
+        generator = self.context["_hypothesis_generator"]
+        
+        try:
+            if cmd == "hypothesize":
+                if len(parts) < 2:
+                    print("❌ Usage: hypothesize pattern|analogy|question <args>")
+                    return
+                
+                subcmd = parts[1]
+                
+                if subcmd == "pattern":
+                    # hypothesize pattern <pattern_name> domain <domain_name>
+                    pattern_name = None
+                    domain_name = None
+                    n_hypotheses = 3
+                    
+                    idx = 2
+                    while idx < len(parts):
+                        if parts[idx] == "domain" and idx + 1 < len(parts):
+                            domain_name = parts[idx + 1]
+                            idx += 2
+                        elif parts[idx].startswith("n="):
+                            n_hypotheses = int(parts[idx].split("=")[1])
+                            idx += 1
+                        else:
+                            pattern_name = parts[idx]
+                            idx += 1
+                    
+                    if not pattern_name or not domain_name:
+                        print("❌ Usage: hypothesize pattern <pattern_name> domain <domain_name>")
+                        print(f"   Patterns: {[p.name for p in UniversalPattern]}")
+                        print(f"   Domains: {list(DOMAIN_KNOWLEDGE.keys())}")
+                        return
+                    
+                    # Convert pattern name to enum
+                    pattern = None
+                    for p in UniversalPattern:
+                        if p.name.lower() == pattern_name.lower() or \
+                           p.name.lower().replace("_", "") == pattern_name.lower().replace("_", ""):
+                            pattern = p
+                            break
+                    
+                    if not pattern:
+                        print(f"❌ Unknown pattern: {pattern_name}")
+                        print(f"   Available: {[p.name for p in UniversalPattern]}")
+                        return
+                    
+                    print(f"   [Discovery] Generating hypotheses using {pattern.name} pattern for {domain_name}...")
+                    hypotheses = generator.generate_from_pattern(pattern, domain_name, n_hypotheses)
+                    
+                    for i, h in enumerate(hypotheses, 1):
+                        print(f"\n   Hypothesis {i} (Score: {h.composite_score:.2f}):")
+                        print(f"     {h.statement[:100]}...")
+                        print(f"     Math: {h.mathematical_form}")
+                    
+                    self.context["last_hypotheses"] = hypotheses
+                    print(f"\n✅ Generated {len(hypotheses)} hypotheses")
+                
+                elif subcmd == "analogy":
+                    # hypothesize analogy source=<domain> phenomenon="<text>" target=<domain>
+                    source_domain = None
+                    phenomenon = None
+                    target_domain = None
+                    
+                    for p in parts[2:]:
+                        if p.startswith("source="):
+                            source_domain = p.split("=", 1)[1]
+                        elif p.startswith("phenomenon="):
+                            phenomenon = p.split("=", 1)[1].strip('"\'')
+                        elif p.startswith("target="):
+                            target_domain = p.split("=", 1)[1]
+                    
+                    if not source_domain or not phenomenon or not target_domain:
+                        print("❌ Usage: hypothesize analogy source=<domain> phenomenon=\"<text>\" target=<domain>")
+                        return
+                    
+                    print(f"   [Discovery] Generating analogy-based hypotheses...")
+                    print(f"   Source: {source_domain} ({phenomenon})")
+                    print(f"   Target: {target_domain}")
+                    
+                    hypotheses = generator.generate_by_analogy(source_domain, phenomenon, target_domain)
+                    
+                    for i, h in enumerate(hypotheses, 1):
+                        print(f"\n   Hypothesis {i} (Score: {h.composite_score:.2f}):")
+                        print(f"     {h.statement[:100]}...")
+                    
+                    self.context["last_hypotheses"] = hypotheses
+                    print(f"\n✅ Generated {len(hypotheses)} hypotheses by analogy")
+                
+                elif subcmd == "question":
+                    # hypothesize question domain=<domain> index=<n>
+                    domain_name = None
+                    question_idx = 0
+                    
+                    for p in parts[2:]:
+                        if p.startswith("domain="):
+                            domain_name = p.split("=", 1)[1]
+                        elif p.startswith("index="):
+                            question_idx = int(p.split("=", 1)[1])
+                    
+                    if not domain_name:
+                        print("❌ Usage: hypothesize question domain=<domain> [index=<n>]")
+                        return
+                    
+                    print(f"   [Discovery] Generating hypotheses to address open question in {domain_name}...")
+                    
+                    if domain_name in DOMAIN_KNOWLEDGE:
+                        question = DOMAIN_KNOWLEDGE[domain_name].open_questions[question_idx]
+                        print(f"   Question: {question}")
+                    
+                    hypotheses = generator.generate_for_open_question(domain_name, question_idx)
+                    
+                    for i, h in enumerate(hypotheses, 1):
+                        print(f"\n   Hypothesis {i} (Score: {h.composite_score:.2f}):")
+                        print(f"     {h.statement[:80]}...")
+                    
+                    self.context["last_hypotheses"] = hypotheses
+                    print(f"\n✅ Generated {len(hypotheses)} hypotheses")
+                
+                else:
+                    print(f"❌ Unknown hypothesize subcommand: {subcmd}")
+                    print("   Available: pattern, analogy, question")
+            
+            elif cmd == "discover":
+                if len(parts) < 2:
+                    print("❌ Usage: discover crossdomain|top|export <args>")
+                    return
+                
+                subcmd = parts[1]
+                
+                if subcmd == "crossdomain":
+                    # discover crossdomain [n_per_pair=2]
+                    n_per_pair = 2
+                    for p in parts[2:]:
+                        if p.startswith("n_per_pair="):
+                            n_per_pair = int(p.split("=")[1])
+                    
+                    print(f"   [Discovery] Running cross-domain hypothesis generation...")
+                    hypotheses = generator.generate_all_cross_domain(n_per_pair=n_per_pair)
+                    
+                    print(f"\n✅ Generated {len(hypotheses)} cross-domain hypotheses")
+                    
+                    top = generator.get_top_hypotheses(5)
+                    print("\n   Top 5 hypotheses:")
+                    for i, h in enumerate(top, 1):
+                        print(f"     {i}. [{h.pattern.name}] Score: {h.composite_score:.2f}")
+                        print(f"        {h.statement[:70]}...")
+                    
+                    self.context["last_hypotheses"] = hypotheses
+                
+                elif subcmd == "top":
+                    # discover top [n=5]
+                    n = 5
+                    for p in parts[2:]:
+                        if p.startswith("n="):
+                            n = int(p.split("=")[1])
+                    
+                    top = generator.get_top_hypotheses(n)
+                    
+                    print(f"\n   Top {n} hypotheses (out of {len(generator.generated_hypotheses)}):")
+                    for i, h in enumerate(top, 1):
+                        print(f"\n   {i}. [{h.pattern.name}] Score: {h.composite_score:.2f}")
+                        print(f"      Domain: {h.domain}")
+                        print(f"      Statement: {h.statement[:80]}...")
+                        print(f"      Novelty: {h.novelty_score:.2f} | Testability: {h.testability_score:.2f}")
+                
+                elif subcmd == "export":
+                    # discover export [path=<filepath>]
+                    filepath = "/opt/qenex_lab/workspace/reports/hypotheses.json"
+                    for p in parts[2:]:
+                        if p.startswith("path="):
+                            filepath = p.split("=", 1)[1]
+                    
+                    generator.export_hypotheses(filepath)
+                    print(f"✅ Exported {len(generator.generated_hypotheses)} hypotheses to {filepath}")
+                
+                else:
+                    print(f"❌ Unknown discover subcommand: {subcmd}")
+                    print("   Available: crossdomain, top, export")
+        
+        except Exception as e:
+            print(f"❌ Discovery Error: {e}")
 
     def _handle_optimize(self, line: str):
         """
