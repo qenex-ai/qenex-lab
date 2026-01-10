@@ -1028,6 +1028,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('orchestrator '):
+                 self._handle_orchestrator(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2424,6 +2429,57 @@ class QLangInterpreter:
         
         engine = self.context["_research_engine"]
         handle_research_command(engine, line, self.context)
+    
+    def _handle_orchestrator(self, line: str):
+        """
+        Handle experiment orchestrator commands for automated workflows.
+        
+        The Orchestrator enables multi-step scientific pipelines that coordinate:
+        - Research: Literature search and paper analysis
+        - Scout 10M: Scientific reasoning with 10M token context
+        - DeepSeek: Code generation and optimization
+        - Polyglot: Multi-language computation dispatch
+        - Validation: Result verification
+        
+        Available commands:
+            orchestrator status               - Show orchestrator status
+            orchestrator research <topic>     - Run research pipeline
+            orchestrator implement <desc>     - Run implementation pipeline
+            orchestrator prove <theorem>      - Run proof pipeline
+            orchestrator runs                 - List recent runs
+            orchestrator clear-cache          - Clear result cache
+            orchestrator help                 - Show help
+        
+        Pipeline Types:
+            research     - Search → Analyze → Hypothesize → Checkpoint
+            implement    - Design → Generate → Test → Validate
+            analysis     - Understand → Preprocess → Analyze → Visualize
+            proof        - Decompose → Strategy → Formalize
+        
+        Args:
+            line: Command line starting with 'orchestrator'
+        """
+        try:
+            from orchestrator import execute_orchestrator_command
+        except ImportError:
+            try:
+                import sys
+                import os
+                orch_dir = os.path.dirname(os.path.abspath(__file__))
+                if orch_dir not in sys.path:
+                    sys.path.insert(0, orch_dir)
+                from orchestrator import execute_orchestrator_command
+            except ImportError as e:
+                print(f"❌ Orchestrator Error: Could not load Orchestrator module: {e}")
+                return
+        
+        # Remove 'orchestrator' prefix and execute
+        cmd = line.strip()
+        if cmd.lower().startswith("orchestrator"):
+            cmd = cmd[len("orchestrator"):].strip()
+        
+        result = execute_orchestrator_command(self, cmd)
+        print(result)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
