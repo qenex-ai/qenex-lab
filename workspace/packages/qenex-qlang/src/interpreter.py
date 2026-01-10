@@ -1008,6 +1008,11 @@ class QLangInterpreter:
                  ptr += 1
                  continue
 
+            if line.startswith('polyglot'):
+                 self._handle_polyglot(line)
+                 ptr += 1
+                 continue
+
             if line.startswith('define '):
                 raw_assign = line[7:]
                 if '=' not in raw_assign:
@@ -2210,6 +2215,52 @@ class QLangInterpreter:
         
         bridge = self.context["_julia_bridge"]
         handle_julia_command(bridge, line, self.context)
+    
+    def _handle_polyglot(self, line: str):
+        """
+        Handle polyglot commands for multi-language scientific computing.
+        
+        The polyglot system intelligently dispatches computations to the
+        optimal backend: Python (NumPy), Julia (BLAS), or Rust (parallel ERI).
+        
+        Available commands:
+            polyglot status              - Show backend availability
+            polyglot benchmark [sizes]   - Run backend benchmarks
+            polyglot matmul A B [C]      - Matrix multiply (auto-dispatch)
+            polyglot eigen M             - Eigendecomposition
+            polyglot svd M               - Singular value decomposition
+            polyglot solve A b [x]       - Solve linear system
+            polyglot fft x               - Fast Fourier Transform
+            
+        Explicit backend selection:
+            polyglot.julia matmul A B    - Force Julia backend
+            polyglot.python eigen M      - Force Python backend
+            polyglot.rust eri basis      - Force Rust backend
+        
+        Args:
+            line: Command line starting with 'polyglot'
+        """
+        try:
+            from polyglot import PolyglotDispatcher, handle_polyglot_command
+        except ImportError:
+            try:
+                import sys
+                import os
+                polyglot_dir = os.path.dirname(os.path.abspath(__file__))
+                if polyglot_dir not in sys.path:
+                    sys.path.insert(0, polyglot_dir)
+                from polyglot import PolyglotDispatcher, handle_polyglot_command
+            except ImportError as e:
+                print(f"❌ Polyglot Error: Could not load polyglot module: {e}")
+                return
+        
+        # Initialize dispatcher on first use (lazy loading)
+        if "_polyglot_dispatcher" not in self.context:
+            print("   [Q-Lang] Initializing Polyglot Dispatcher...")
+            self.context["_polyglot_dispatcher"] = PolyglotDispatcher(verbose=False)
+        
+        dispatcher = self.context["_polyglot_dispatcher"]
+        handle_polyglot_command(dispatcher, line, self.context)
 
 if __name__ == "__main__":
     ql = QLangInterpreter()
