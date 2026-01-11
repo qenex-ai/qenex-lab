@@ -305,8 +305,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://qenex.ai/",
+            "X-Title": "qenex-lab",
           },
         },
       }
@@ -316,8 +316,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "http-referer": "https://opencode.ai/",
-            "x-title": "opencode",
+            "http-referer": "https://qenex.ai/",
+            "x-title": "qenex-lab",
           },
         },
       }
@@ -383,8 +383,8 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://qenex.ai/",
+            "X-Title": "qenex-lab",
           },
         },
       }
@@ -415,8 +415,8 @@ export namespace Provider {
             // Cloudflare AI Gateway uses cf-aig-authorization for authenticated gateways
             // This enables Unified Billing where Cloudflare handles upstream provider auth
             ...(apiToken ? { "cf-aig-authorization": `Bearer ${apiToken}` } : {}),
-            "HTTP-Referer": "https://opencode.ai/",
-            "X-Title": "opencode",
+            "HTTP-Referer": "https://qenex.ai/",
+            "X-Title": "qenex-lab",
           },
           // Custom fetch to strip Authorization header - AI Gateway uses cf-aig-authorization instead
           // Sending Authorization header with invalid value causes auth errors
@@ -433,7 +433,7 @@ export namespace Provider {
         autoload: false,
         options: {
           headers: {
-            "X-Cerebras-3rd-Party-Integration": "opencode",
+            "X-Cerebras-3rd-Party-Integration": "qenex-lab",
           },
         },
       }
