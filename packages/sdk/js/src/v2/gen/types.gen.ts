@@ -1255,7 +1255,7 @@ export type KeybindsConfig = {
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 /**
- * Server configuration for opencode serve and web commands
+ * Server configuration for qenex serve and web commands
  */
 export type ServerConfig = {
   /**
@@ -1560,7 +1560,7 @@ export type Config = {
   }
   server?: ServerConfig
   /**
-   * Command configuration, see https://opencode.ai/docs/commands
+   * Command configuration, see https://qenex.ai/docs/commands
    */
   command?: {
     [key: string]: {
@@ -1621,7 +1621,7 @@ export type Config = {
     [key: string]: AgentConfig | undefined
   }
   /**
-   * Agent configuration, see https://opencode.ai/docs/agent
+   * Agent configuration, see https://qenex.ai/docs/agent
    */
   agent?: {
     plan?: AgentConfig
