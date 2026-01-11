@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/function",
+  "name": "@qenex-lab/function",
   "version": "1.1.6",
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,

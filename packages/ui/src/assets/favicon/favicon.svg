@@ -1,7 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512"><svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="512" height="512" fill="#131010"></rect>
-<path d="M320 224V352H192V224H320Z" fill="#5A5858"></path>
-<path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="white"></path>
-</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
-@media (prefers-color-scheme: dark) { :root { filter: none; } }
-</style></svg>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="512" height="512" viewBox="0 0 512 512">
+<!-- QENEX LAB Favicon - "Q" icon -->
+<defs>
+  <linearGradient id="qenex-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+    <stop offset="100%" style="stop-color:#B088FF;stop-opacity:1" />
+  </linearGradient>
+</defs>
+<rect width="512" height="512" fill="#131010"/>
+<!-- Q letter -->
+<rect x="96" y="96" width="320" height="320" rx="32" fill="url(#qenex-gradient)"/>
+<rect x="160" y="160" width="192" height="192" fill="#131010"/>
+<!-- Q tail -->
+<rect x="288" y="352" width="160" height="64" fill="url(#qenex-gradient)"/>
+<style>
+@media (prefers-color-scheme: light) { 
+  rect[fill="#131010"]:first-of-type { fill: #F5F5F5; }
+  rect[fill="#131010"]:not(:first-of-type) { fill: #F5F5F5; }
+}
+</style>
+</svg>

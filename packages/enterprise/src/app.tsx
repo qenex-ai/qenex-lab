@@ -1,12 +1,12 @@
 import { Router } from "@solidjs/router"
 import { FileRoutes } from "@solidjs/start/router"
-import { Font } from "@opencode-ai/ui/font"
+import { Font } from "@qenex-lab/ui/font"
 import { MetaProvider } from "@solidjs/meta"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
+import { MarkedProvider } from "@qenex-lab/ui/context/marked"
+import { DialogProvider } from "@qenex-lab/ui/context/dialog"
 import { Suspense } from "solid-js"
 import "./app.css"
-import { Favicon } from "@opencode-ai/ui/favicon"
+import { Favicon } from "@qenex-lab/ui/favicon"
 
 export default function App() {
   return (

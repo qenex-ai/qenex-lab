@@ -1,13 +1,13 @@
-import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { TextField } from "@opencode-ai/ui/text-field"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Button } from "@qenex-lab/ui/button"
+import { useDialog } from "@qenex-lab/ui/context/dialog"
+import { Dialog } from "@qenex-lab/ui/dialog"
+import { TextField } from "@qenex-lab/ui/text-field"
+import { Icon } from "@qenex-lab/ui/icon"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { type LocalProject, getAvatarColors } from "@/context/layout"
-import { Avatar } from "@opencode-ai/ui/avatar"
+import { Avatar } from "@qenex-lab/ui/avatar"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 

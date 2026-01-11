@@ -4,9 +4,9 @@ import { SDKProvider, useSDK } from "@/context/sdk"
 import { SyncProvider, useSync } from "@/context/sync"
 import { LocalProvider } from "@/context/local"
 
-import { base64Decode } from "@opencode-ai/util/encode"
-import { DataProvider } from "@opencode-ai/ui/context"
-import { iife } from "@opencode-ai/util/iife"
+import { base64Decode } from "@qenex-lab/util/encode"
+import { DataProvider } from "@qenex-lab/ui/context"
+import { iife } from "@qenex-lab/util/iife"
 
 export default function Layout(props: ParentProps) {
   const params = useParams()

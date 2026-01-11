@@ -1,12 +1,12 @@
-import { Billing } from "@opencode-ai/console-core/billing.js"
+import { Billing } from "@qenex-lab/console-core/billing.js"
 import type { APIEvent } from "@solidjs/start/server"
-import { and, Database, eq, sql } from "@opencode-ai/console-core/drizzle/index.js"
-import { BillingTable, PaymentTable } from "@opencode-ai/console-core/schema/billing.sql.js"
-import { UserTable } from "@opencode-ai/console-core/schema/user.sql.js"
-import { Identifier } from "@opencode-ai/console-core/identifier.js"
-import { centsToMicroCents } from "@opencode-ai/console-core/util/price.js"
-import { Actor } from "@opencode-ai/console-core/actor.js"
-import { Resource } from "@opencode-ai/console-resource"
+import { and, Database, eq, sql } from "@qenex-lab/console-core/drizzle/index.js"
+import { BillingTable, PaymentTable } from "@qenex-lab/console-core/schema/billing.sql.js"
+import { UserTable } from "@qenex-lab/console-core/schema/user.sql.js"
+import { Identifier } from "@qenex-lab/console-core/identifier.js"
+import { centsToMicroCents } from "@qenex-lab/console-core/util/price.js"
+import { Actor } from "@qenex-lab/console-core/actor.js"
+import { Resource } from "@qenex-lab/console-resource"
 
 export async function POST(input: APIEvent) {
   const body = await Billing.stripe().webhooks.constructEventAsync(

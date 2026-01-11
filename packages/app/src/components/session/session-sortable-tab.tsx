@@ -1,11 +1,11 @@
 import { createMemo, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { createSortable } from "@thisbeyond/solid-dnd"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { Tabs } from "@opencode-ai/ui/tabs"
-import { getFilename } from "@opencode-ai/util/path"
+import { FileIcon } from "@qenex-lab/ui/file-icon"
+import { IconButton } from "@qenex-lab/ui/icon-button"
+import { Tooltip } from "@qenex-lab/ui/tooltip"
+import { Tabs } from "@qenex-lab/ui/tabs"
+import { getFilename } from "@qenex-lab/util/path"
 import { useFile } from "@/context/file"
 
 export function FileVisual(props: { path: string; active?: boolean }): JSX.Element {
