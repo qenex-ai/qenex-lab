@@ -5,6 +5,10 @@ import { type Config } from "./gen/client/types.gen.js"
 import { OpencodeClient } from "./gen/sdk.gen.js"
 export { type Config as OpencodeClientConfig, OpencodeClient }
 
+// Export QENEX-branded aliases for backward compatibility
+export { OpencodeClient as QenexClient }
+export type QenexClientConfig = Config
+
 export function createOpencodeClient(config?: Config & { directory?: string }) {
   if (!config?.fetch) {
     const customFetch: any = (req: any) => {
@@ -23,10 +27,13 @@ export function createOpencodeClient(config?: Config & { directory?: string }) {
     const encodedDirectory = isNonASCII ? encodeURIComponent(config.directory) : config.directory
     config.headers = {
       ...config.headers,
-      "x-opencode-directory": encodedDirectory,
+      "x-qenex-directory": encodedDirectory,
     }
   }
 
   const client = createClient(config)
   return new OpencodeClient({ client })
 }
+
+// Export QENEX-branded alias
+export const createQenexClient = createOpencodeClient

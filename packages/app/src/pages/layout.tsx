@@ -575,13 +575,13 @@ export default function Layout(props: ParentProps) {
     const hasError = createMemo(() => notifications().some((n) => n.type === "error"))
     const name = createMemo(() => props.project.name || getFilename(props.project.worktree))
     const mask = "radial-gradient(circle 5px at calc(100% - 2px) 2px, transparent 5px, black 5.5px)"
-    const opencode = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
+    const qenexlab = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
     return (
       <div class="relative size-5 shrink-0 rounded-sm">
         <Avatar
           fallback={name()}
-          src={props.project.id === opencode ? "https://opencode.ai/favicon.svg" : props.project.icon?.url}
+          src={props.project.id === qenexlab ? "https://qenex.ai/favicon.svg" : props.project.icon?.url}
           {...getAvatarColors(props.project.icon?.color)}
           class={`size-full ${props.class ?? ""}`}
           style={
@@ -1040,7 +1040,7 @@ export default function Layout(props: ParentProps) {
           <Tooltip placement="right" value="Share feedback" inactive={expanded()}>
             <Button
               as={"a"}
-              href="https://opencode.ai/desktop-feedback"
+              href="https://qenex.ai/desktop-feedback"
               target="_blank"
               class="flex w-full text-left justify-start text-text-base stroke-[1.5px] rounded-lg px-2"
               variant="ghost"

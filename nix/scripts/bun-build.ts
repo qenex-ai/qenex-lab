@@ -14,7 +14,7 @@ if (!target) {
 
 process.chdir(pkg)
 
-const manifestName = "opencode-assets.manifest"
+const manifestName = "qenex-assets.manifest"
 const manifestPath = path.join(pkg, manifestName)
 
 const readTrackedAssets = () => {
@@ -59,13 +59,13 @@ const result = await Bun.build({
   },
   compile: {
     target,
-    outfile: "opencode",
+    outfile: "qenex",
     autoloadBunfig: false,
     autoloadDotenv: false,
     //@ts-ignore (bun types aren't up to date)
     autoloadTsconfig: true,
     autoloadPackageJson: true,
-    execArgv: ["--user-agent=opencode/" + version, "--use-system-ca", "--"],
+    execArgv: ["--user-agent=qenex-lab/" + version, "--use-system-ca", "--"],
     windows: {},
   },
 })
@@ -110,7 +110,7 @@ if (!output) {
   throw new Error("Worker build produced no entry-point output")
 }
 
-const dest = path.join(pkg, "opencode-worker.js")
+const dest = path.join(pkg, "qenex-worker.js")
 await Bun.write(dest, Bun.file(output.path))
 fs.rmSync(path.dirname(output.path), { recursive: true, force: true })
 

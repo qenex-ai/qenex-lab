@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
-import { Script } from "@opencode-ai/script"
+import { Script } from "@qenex-lab/script"
 import { buildNotes, getLatestRelease } from "./changelog"
 
 let notes: string[] = []
@@ -35,7 +35,7 @@ await Bun.file(extensionToml).write(toml)
 
 await $`bun install`
 
-console.log("\n=== opencode ===\n")
+console.log("\n=== qenex ===\n")
 await import(`../packages/opencode/script/publish.ts`)
 
 console.log("\n=== sdk ===\n")

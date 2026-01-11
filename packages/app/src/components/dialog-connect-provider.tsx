@@ -235,8 +235,8 @@ export function DialogConnectProvider(props: { provider: string }) {
                           </div>
                           <div class="text-14-regular text-text-base">
                             Visit{" "}
-                            <Link href="https://opencode.ai/zen" tabIndex={-1}>
-                              opencode.ai/zen
+                            <Link href="https://qenex.ai/zen" tabIndex={-1}>
+                              qenex.ai/zen
                             </Link>{" "}
                             to collect your API key.
                           </div>
@@ -245,7 +245,7 @@ export function DialogConnectProvider(props: { provider: string }) {
                       <Match when={true}>
                         <div class="text-14-regular text-text-base">
                           Enter your {provider().name} API key to connect your account and use {provider().name} models
-                          in OpenCode.
+                          in QENEX LAB.
                         </div>
                       </Match>
                     </Switch>

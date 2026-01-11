@@ -15,7 +15,7 @@ type PersistTarget = {
 }
 
 const LEGACY_STORAGE = "default.dat"
-const GLOBAL_STORAGE = "opencode.global.dat"
+const GLOBAL_STORAGE = "qenex.global.dat"
 
 function snapshot(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as unknown
@@ -62,7 +62,7 @@ function parse(value: string) {
 function workspaceStorage(dir: string) {
   const head = dir.slice(0, 12) || "workspace"
   const sum = checksum(dir) ?? "0"
-  return `opencode.workspace.${head}.${sum}.dat`
+  return `qenex.workspace.${head}.${sum}.dat`
 }
 
 function localStorageWithPrefix(prefix: string): SyncStorage {

@@ -31,11 +31,11 @@ export async function createOpencodeServer(options?: ServerOptions) {
   const args = [`serve`, `--hostname=${options.hostname}`, `--port=${options.port}`]
   if (options.config?.logLevel) args.push(`--log-level=${options.config.logLevel}`)
 
-  const proc = spawn(`opencode`, args, {
+  const proc = spawn(`qenex`, args, {
     signal: options.signal,
     env: {
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config ?? {}),
+      QENEX_CONFIG_CONTENT: JSON.stringify(options.config ?? {}),
     },
   })
 
@@ -48,7 +48,7 @@ export async function createOpencodeServer(options?: ServerOptions) {
       output += chunk.toString()
       const lines = output.split("\n")
       for (const line of lines) {
-        if (line.startsWith("opencode server listening")) {
+        if (line.startsWith("qenex server listening")) {
           const match = line.match(/on\s+(https?:\/\/[^\s]+)/)
           if (!match) {
             throw new Error(`Failed to parse server url from output: ${line}`)
@@ -90,6 +90,9 @@ export async function createOpencodeServer(options?: ServerOptions) {
   }
 }
 
+// Export QENEX-branded alias
+export const createQenexServer = createOpencodeServer
+
 export function createOpencodeTui(options?: TuiOptions) {
   const args = []
 
@@ -106,12 +109,12 @@ export function createOpencodeTui(options?: TuiOptions) {
     args.push(`--agent=${options.agent}`)
   }
 
-  const proc = spawn(`opencode`, args, {
+  const proc = spawn(`qenex`, args, {
     signal: options?.signal,
     stdio: "inherit",
     env: {
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(options?.config ?? {}),
+      QENEX_CONFIG_CONTENT: JSON.stringify(options?.config ?? {}),
     },
   })
 
@@ -121,3 +124,6 @@ export function createOpencodeTui(options?: TuiOptions) {
     },
   }
 }
+
+// Export QENEX-branded alias
+export const createQenexTui = createOpencodeTui
