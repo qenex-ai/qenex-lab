@@ -128,11 +128,11 @@ async function showRemovalSummary(targets: RemovalTargets, method: Installation.
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string> = {
-      npm: "npm uninstall -g opencode-ai",
-      pnpm: "pnpm uninstall -g opencode-ai",
-      bun: "bun remove -g opencode-ai",
-      yarn: "yarn global remove opencode-ai",
-      brew: "brew uninstall opencode",
+      npm: "npm uninstall -g qenex-lab",
+      pnpm: "pnpm uninstall -g qenex-lab",
+      bun: "bun remove -g qenex-lab",
+      yarn: "yarn global remove qenex-lab",
+      brew: "brew uninstall qenex-lab",
     }
     prompts.log.info(`  ✓ Package: ${cmds[method] || method}`)
   }
@@ -177,11 +177,11 @@ async function executeUninstall(method: Installation.Method, targets: RemovalTar
 
   if (method !== "curl" && method !== "unknown") {
     const cmds: Record<string, string[]> = {
-      npm: ["npm", "uninstall", "-g", "opencode-ai"],
-      pnpm: ["pnpm", "uninstall", "-g", "opencode-ai"],
-      bun: ["bun", "remove", "-g", "opencode-ai"],
-      yarn: ["yarn", "global", "remove", "opencode-ai"],
-      brew: ["brew", "uninstall", "opencode"],
+      npm: ["npm", "uninstall", "-g", "qenex-lab"],
+      pnpm: ["pnpm", "uninstall", "-g", "qenex-lab"],
+      bun: ["bun", "remove", "-g", "qenex-lab"],
+      yarn: ["yarn", "global", "remove", "qenex-lab"],
+      brew: ["brew", "uninstall", "qenex-lab"],
     }
 
     const cmd = cmds[method]
