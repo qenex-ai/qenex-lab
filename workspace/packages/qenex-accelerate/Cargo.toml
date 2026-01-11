@@ -8,8 +8,8 @@ name = "qenex_accelerate"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
-numpy = "0.20"
+pyo3 = { version = "0.24", features = ["extension-module"] }
+numpy = "0.24"
 ndarray = "0.15"
 rayon = "1.7"  # For parallelization
 core_affinity = "0.8"  # For CPU thread pinning
