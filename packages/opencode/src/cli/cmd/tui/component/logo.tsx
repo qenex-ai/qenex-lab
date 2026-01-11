@@ -2,9 +2,14 @@ import { TextAttributes } from "@opentui/core"
 import { For } from "solid-js"
 import { useTheme } from "@tui/context/theme"
 
-const LOGO_LEFT = [` ╭───╮ ╭───╮ ╭╮╭  ╭───╮ ╲ ╱`, ` │ │ │ ├─    │╰╯│ ├─     ╳ `, ` ╰─╯╯ ╰───╯ ╯  ╰ ╰───╯ ╱ ╲`]
+const LOGO_LEFT = [
+  `                        `,
+  `█▀▀█ █▀▀▀ █▀▀▄ █▀▀▀ █ █`,
+  `█ ▀█ █▀▀▀ █  █ █▀▀▀  █ `,
+  ` ▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀ ▀`,
+]
 
-const LOGO_RIGHT = [`╷    ╭───╮ ╭───╮`, `│    ├───┤ ├───╮`, `╰─── ╵   ╵ ╰───╯`]
+const LOGO_RIGHT = [`             `, `█    █▀▀█ █▀▀▄`, `█    █▀▀█ █▀▀▄`, `▀▀▀▀ ▀  ▀ ▀▀▀ `]
 
 export function Logo() {
   const { theme } = useTheme()
@@ -12,7 +17,7 @@ export function Logo() {
     <box>
       <For each={LOGO_LEFT}>
         {(line, index) => (
-          <box flexDirection="row" gap={4}>
+          <box flexDirection="row" gap={1}>
             <text fg={theme.textMuted} selectable={false}>
               {line}
             </text>
