@@ -22,8 +22,8 @@ export default function TermsOfService() {
               <p class="effective-date">Effective date: Dec 16, 2025</p>
 
               <p>
-                Welcome to QENEX LAB. Please read on to learn the rules and restrictions that govern your use of QENEX LAB
-                (the "Services"). If you have any questions, comments, or concerns regarding these terms or the
+                Welcome to QENEX LAB. Please read on to learn the rules and restrictions that govern your use of QENEX
+                LAB (the "Services"). If you have any questions, comments, or concerns regarding these terms or the
                 Services, please contact us at:
               </p>
 
@@ -36,7 +36,7 @@ export default function TermsOfService() {
                 <strong>ANOMALY INNOVATIONS, INC.</strong> ("QENEX LAB," "we" and "us"). Your use of the Services in any
                 way means that you agree to all of these Terms, and these Terms will remain in effect while you use the
                 Services. These Terms include the provisions in this document as well as those in the Privacy Policy{" "}
-                <a href="/legal/privacy-policy">https://opencode.ai/legal/privacy-policy</a>.{" "}
+                <a href="/legal/privacy-policy">https://qenex.ai/legal/privacy-policy</a>.{" "}
                 <strong>
                   Your use of or participation in certain Services may also be subject to additional policies, rules
                   and/or conditions ("Additional Terms"), which are incorporated herein by reference, and you understand
@@ -66,7 +66,7 @@ export default function TermsOfService() {
                 RIGHT TO PARTICIPATE IN A CLASS ACTION LAWSUIT OR CLASS-WIDE ARBITRATION.
               </p>
 
-              <h2 id="what-is-opencode">What is QENEX LAB?</h2>
+              <h2 id="what-is-qenex">What is QENEX LAB?</h2>
               <p>
                 QENEX LAB is an AI-powered coding agent that helps you write, understand, and modify code using large
                 language models. Certain of these large language models are provided by third parties ("Third Party
@@ -79,7 +79,7 @@ export default function TermsOfService() {
               <p>
                 We are constantly trying to improve our Services, so these Terms may need to change along with our
                 Services. We reserve the right to change the Terms at any time, but if we do, we will place a notice on
-                our site located at opencode.ai, send you an email, and/or notify you by some other means.
+                our site located at qenex.ai, send you an email, and/or notify you by some other means.
               </p>
 
               <p>
@@ -95,9 +95,9 @@ export default function TermsOfService() {
 
               <h2 id="what-about-my-privacy">What about my privacy?</h2>
               <p>
-                QENEX LAB takes the privacy of its users very seriously. For the current QENEX LAB Privacy Policy, please
-                click here{" "}
-                <a href="https://opencode.ai/legal/privacy-policy">https://opencode.ai/legal/privacy-policy</a>.
+                QENEX LAB takes the privacy of its users very seriously. For the current QENEX LAB Privacy Policy,
+                please click here{" "}
+                <a href="https://qenex.ai/legal/privacy-policy">https://qenex.ai/legal/privacy-policy</a>.
               </p>
 
               <h3>Children's Online Privacy Protection Act</h3>
@@ -228,9 +228,9 @@ export default function TermsOfService() {
 
               <h2 id="what-about-third-party-models">What about Third Party Models?</h2>
               <p>
-                The Services enable you to access and use Third Party Models, which are not owned or controlled by
-                QENEX LAB. Your ability to access Third Party Models is contingent on you having API keys or otherwise
-                having the right to access such Third Party Models.
+                The Services enable you to access and use Third Party Models, which are not owned or controlled by QENEX
+                LAB. Your ability to access Third Party Models is contingent on you having API keys or otherwise having
+                the right to access such Third Party Models.
               </p>
 
               <p>
@@ -241,7 +241,7 @@ export default function TermsOfService() {
                 any Third Party Model.
               </p>
 
-              <h2 id="will-opencode-ever-change-the-services">Will QENEX LAB ever change the Services?</h2>
+              <h2 id="will-qenex-ever-change-the-services">Will QENEX LAB ever change the Services?</h2>
               <p>
                 We're always trying to improve our Services, so they may change over time. We may suspend or discontinue
                 any part of the Services, or we may introduce new features or impose limits on certain features or
@@ -259,9 +259,9 @@ export default function TermsOfService() {
               <h3>Paid Services</h3>
               <p>
                 Certain of our Services, including Zen, may be subject to payments now or in the future (the "Paid
-                Services"). Please see our Paid Services page <a href="/zen">https://opencode.ai/zen</a> for a
-                description of the current Paid Services. Please note that any payment terms presented to you in the
-                process of using or signing up for a Paid Service are deemed part of these Terms.
+                Services"). Please see our Paid Services page <a href="/zen">https://qenex.ai/zen</a> for a description
+                of the current Paid Services. Please note that any payment terms presented to you in the process of
+                using or signing up for a Paid Service are deemed part of these Terms.
               </p>
 
               <h3>Billing</h3>
@@ -300,7 +300,7 @@ export default function TermsOfService() {
                 CONFIRMED BY US) THAT YOU HAVE TERMINATED THIS AUTHORIZATION OR WISH TO CHANGE YOUR PAYMENT METHOD. SUCH
                 NOTICE WILL NOT AFFECT CHARGES SUBMITTED BEFORE WE REASONABLY COULD ACT. TO TERMINATE YOUR AUTHORIZATION
                 OR CHANGE YOUR PAYMENT METHOD, GO TO ACCOUNT SETTINGS{" "}
-                <a href="https://opencode.ai/auth">https://opencode.ai/auth</a>.
+                <a href="https://qenex.ai/auth">https://qenex.ai/auth</a>.
               </p>
 
               <h3>Free Trials and Other Promotions</h3>
@@ -315,15 +315,15 @@ export default function TermsOfService() {
               <h2 id="what-if-i-want-to-stop">What if I want to stop using the Services?</h2>
               <p>
                 You're free to do that at any time; please refer to our Privacy Policy{" "}
-                <a href="/legal/privacy-policy">https://opencode.ai/legal/privacy-policy</a>, as well as the licenses
+                <a href="/legal/privacy-policy">https://qenex.ai/legal/privacy-policy</a>, as well as the licenses
                 above, to understand how we treat information you provide to us after you have stopped using our
                 Services.
               </p>
 
               <p>
-                QENEX LAB is also free to terminate (or suspend access to) your use of the Services for any reason in our
-                discretion, including your breach of these Terms. QENEX LAB has the sole right to decide whether you are
-                in violation of any of the restrictions set forth in these Terms.
+                QENEX LAB is also free to terminate (or suspend access to) your use of the Services for any reason in
+                our discretion, including your breach of these Terms. QENEX LAB has the sole right to decide whether you
+                are in violation of any of the restrictions set forth in these Terms.
               </p>
 
               <p>
@@ -340,33 +340,32 @@ export default function TermsOfService() {
                 QENEX LAB and its licensors, suppliers, partners, parent, subsidiaries or affiliated entities, and each
                 of their respective officers, directors, members, employees, consultants, contract employees,
                 representatives and agents, and each of their respective successors and assigns (QENEX LAB and all such
-                parties together, the "QENEX LAB Parties") make no representations or warranties concerning the Services,
-                including without limitation regarding any Content contained in or accessed through the Services, and
-                the QENEX LAB Parties will not be responsible or liable for the accuracy, copyright compliance, legality,
-                or decency of material contained in or accessed through the Services or any claims, actions, suits
-                procedures, costs, expenses, damages or liabilities arising out of use of, or in any way related to your
-                participation in, the Services. The QENEX LAB Parties make no representations or warranties regarding
-                suggestions or recommendations of services or products offered or purchased through or in connection
-                with the Services. THE SERVICES AND CONTENT ARE PROVIDED BY OPENCODE (AND ITS LICENSORS AND SUPPLIERS)
-                ON AN "AS-IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, WITHOUT
-                LIMITATION, IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT,
-                OR THAT USE OF THE SERVICES WILL BE UNINTERRUPTED OR ERROR-FREE. SOME STATES DO NOT ALLOW LIMITATIONS ON
-                HOW LONG AN IMPLIED WARRANTY LASTS, SO THE ABOVE LIMITATIONS MAY NOT APPLY TO YOU.
+                parties together, the "QENEX LAB Parties") make no representations or warranties concerning the
+                Services, including without limitation regarding any Content contained in or accessed through the
+                Services, and the QENEX LAB Parties will not be responsible or liable for the accuracy, copyright
+                compliance, legality, or decency of material contained in or accessed through the Services or any
+                claims, actions, suits procedures, costs, expenses, damages or liabilities arising out of use of, or in
+                any way related to your participation in, the Services. The QENEX LAB Parties make no representations or
+                warranties regarding suggestions or recommendations of services or products offered or purchased through
+                or in connection with the Services. THE SERVICES AND CONTENT ARE PROVIDED BY OPENCODE (AND ITS LICENSORS
+                AND SUPPLIERS) ON AN "AS-IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+                INCLUDING, WITHOUT LIMITATION, IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+                NON-INFRINGEMENT, OR THAT USE OF THE SERVICES WILL BE UNINTERRUPTED OR ERROR-FREE. SOME STATES DO NOT
+                ALLOW LIMITATIONS ON HOW LONG AN IMPLIED WARRANTY LASTS, SO THE ABOVE LIMITATIONS MAY NOT APPLY TO YOU.
               </p>
 
               <h3 id="limitation-of-liability">Limitation of Liability</h3>
               <p>
                 TO THE FULLEST EXTENT ALLOWED BY APPLICABLE LAW, UNDER NO CIRCUMSTANCES AND UNDER NO LEGAL THEORY
-                (INCLUDING, WITHOUT LIMITATION, TORT, CONTRACT, STRICT LIABILITY, OR OTHERWISE) SHALL ANY OF THE
-                OPENCODE PARTIES BE LIABLE TO YOU OR TO ANY OTHER PERSON FOR (A) ANY INDIRECT, SPECIAL, INCIDENTAL,
-                PUNITIVE OR CONSEQUENTIAL DAMAGES OF ANY KIND, INCLUDING DAMAGES FOR LOST PROFITS, BUSINESS
-                INTERRUPTION, LOSS OF DATA, LOSS OF GOODWILL, WORK STOPPAGE, ACCURACY OF RESULTS, OR COMPUTER FAILURE OR
-                MALFUNCTION, (B) ANY SUBSTITUTE GOODS, SERVICES OR TECHNOLOGY, (C) ANY AMOUNT, IN THE AGGREGATE, IN
-                EXCESS OF THE GREATER OF (I) ONE-HUNDRED ($100) DOLLARS OR (II) THE AMOUNTS PAID AND/OR PAYABLE BY YOU
-                TO OPENCODE IN CONNECTION WITH THE SERVICES IN THE TWELVE (12) MONTH PERIOD PRECEDING THIS APPLICABLE
-                CLAIM OR (D) ANY MATTER BEYOND OUR REASONABLE CONTROL. SOME STATES DO NOT ALLOW THE EXCLUSION OR
-                LIMITATION OF INCIDENTAL OR CONSEQUENTIAL OR CERTAIN OTHER DAMAGES, SO THE ABOVE LIMITATION AND
-                EXCLUSIONS MAY NOT APPLY TO YOU.
+                (INCLUDING, WITHOUT LIMITATION, TORT, CONTRACT, STRICT LIABILITY, OR OTHERWISE) SHALL ANY OF THE QENEX
+                LAB PARTIES BE LIABLE TO YOU OR TO ANY OTHER PERSON FOR (A) ANY INDIRECT, SPECIAL, INCIDENTAL, PUNITIVE
+                OR CONSEQUENTIAL DAMAGES OF ANY KIND, INCLUDING DAMAGES FOR LOST PROFITS, BUSINESS INTERRUPTION, LOSS OF
+                DATA, LOSS OF GOODWILL, WORK STOPPAGE, ACCURACY OF RESULTS, OR COMPUTER FAILURE OR MALFUNCTION, (B) ANY
+                SUBSTITUTE GOODS, SERVICES OR TECHNOLOGY, (C) ANY AMOUNT, IN THE AGGREGATE, IN EXCESS OF THE GREATER OF
+                (I) ONE-HUNDRED ($100) DOLLARS OR (II) THE AMOUNTS PAID AND/OR PAYABLE BY YOU TO OPENCODE IN CONNECTION
+                WITH THE SERVICES IN THE TWELVE (12) MONTH PERIOD PRECEDING THIS APPLICABLE CLAIM OR (D) ANY MATTER
+                BEYOND OUR REASONABLE CONTROL. SOME STATES DO NOT ALLOW THE EXCLUSION OR LIMITATION OF INCIDENTAL OR
+                CONSEQUENTIAL OR CERTAIN OTHER DAMAGES, SO THE ABOVE LIMITATION AND EXCLUSIONS MAY NOT APPLY TO YOU.
               </p>
 
               <h3>Indemnity</h3>
@@ -396,12 +395,12 @@ export default function TermsOfService() {
               <h3 id="arbitration-agreement">Arbitration Agreement</h3>
               <p>
                 Please read the following ARBITRATION AGREEMENT carefully because it requires you to arbitrate certain
-                disputes and claims with QENEX LAB and limits the manner in which you can seek relief from QENEX LAB. Both
-                you and QENEX LAB acknowledge and agree that for the purposes of any dispute arising out of or relating
-                to the subject matter of these Terms, QENEX LAB's officers, directors, employees and independent
-                contractors ("Personnel") are third-party beneficiaries of these Terms, and that upon your acceptance of
-                these Terms, Personnel will have the right (and will be deemed to have accepted the right) to enforce
-                these Terms against you as the third-party beneficiary hereof.
+                disputes and claims with QENEX LAB and limits the manner in which you can seek relief from QENEX LAB.
+                Both you and QENEX LAB acknowledge and agree that for the purposes of any dispute arising out of or
+                relating to the subject matter of these Terms, QENEX LAB's officers, directors, employees and
+                independent contractors ("Personnel") are third-party beneficiaries of these Terms, and that upon your
+                acceptance of these Terms, Personnel will have the right (and will be deemed to have accepted the right)
+                to enforce these Terms against you as the third-party beneficiary hereof.
               </p>
 
               <h4>Arbitration Rules; Applicability of Arbitration Agreement</h4>
@@ -419,9 +418,9 @@ export default function TermsOfService() {
 
               <h4>Costs of Arbitration</h4>
               <p>
-                The Rules will govern payment of all arbitration fees. QENEX LAB will pay all arbitration fees for claims
-                less than seventy-five thousand ($75,000) dollars. QENEX LAB will not seek its attorneys' fees and costs
-                in arbitration unless the arbitrator determines that your claim is frivolous.
+                The Rules will govern payment of all arbitration fees. QENEX LAB will pay all arbitration fees for
+                claims less than seventy-five thousand ($75,000) dollars. QENEX LAB will not seek its attorneys' fees
+                and costs in arbitration unless the arbitrator determines that your claim is frivolous.
               </p>
 
               <h4>Small Claims Court; Infringement</h4>
@@ -436,11 +435,11 @@ export default function TermsOfService() {
 
               <h4>Waiver of Jury Trial</h4>
               <p>
-                YOU AND OPENCODE WAIVE ANY CONSTITUTIONAL AND STATUTORY RIGHTS TO GO TO COURT AND HAVE A TRIAL IN FRONT
+                YOU AND QENEX LAB WAIVE ANY CONSTITUTIONAL AND STATUTORY RIGHTS TO GO TO COURT AND HAVE A TRIAL IN FRONT
                 OF A JUDGE OR JURY. You and QENEX LAB are instead choosing to have claims and disputes resolved by
                 arbitration. Arbitration procedures are typically more limited, more efficient, and less costly than
                 rules applicable in court and are subject to very limited review by a court. In any litigation between
-                you and QENEX LAB over whether to vacate or enforce an arbitration award, YOU AND OPENCODE WAIVE ALL
+                you and QENEX LAB over whether to vacate or enforce an arbitration award, YOU AND QENEX LAB WAIVE ALL
                 RIGHTS TO A JURY TRIAL, and elect instead to have the dispute be resolved by a judge.
               </p>
 
@@ -449,9 +448,9 @@ export default function TermsOfService() {
                 ALL CLAIMS AND DISPUTES WITHIN THE SCOPE OF THIS ARBITRATION AGREEMENT MUST BE ARBITRATED OR LITIGATED
                 ON AN INDIVIDUAL BASIS AND NOT ON A CLASS BASIS. CLAIMS OF MORE THAN ONE CUSTOMER OR USER CANNOT BE
                 ARBITRATED OR LITIGATED JOINTLY OR CONSOLIDATED WITH THOSE OF ANY OTHER CUSTOMER OR USER. If however,
-                this waiver of class or consolidated actions is deemed invalid or unenforceable, neither you nor
-                QENEX LAB is entitled to arbitration; instead all claims and disputes will be resolved in a court as set
-                forth in (g) below.
+                this waiver of class or consolidated actions is deemed invalid or unenforceable, neither you nor QENEX
+                LAB is entitled to arbitration; instead all claims and disputes will be resolved in a court as set forth
+                in (g) below.
               </p>
 
               <h4>Opt-out</h4>
@@ -489,17 +488,17 @@ export default function TermsOfService() {
                 sees fit. The failure of either you or us to exercise, in any way, any right herein shall not be deemed
                 a waiver of any further rights hereunder. If any provision of these Terms are found to be unenforceable
                 or invalid, that provision will be limited or eliminated, to the minimum extent necessary, so that these
-                Terms shall otherwise remain in full force and effect and enforceable. You and QENEX LAB agree that these
-                Terms are the complete and exclusive statement of the mutual understanding between you and QENEX LAB, and
-                that these Terms supersede and cancel all previous written and oral agreements, communications and other
-                understandings relating to the subject matter of these Terms. You hereby acknowledge and agree that you
-                are not an employee, agent, partner, or joint venture of QENEX LAB, and you do not have any authority of
-                any kind to bind QENEX LAB in any respect whatsoever.
+                Terms shall otherwise remain in full force and effect and enforceable. You and QENEX LAB agree that
+                these Terms are the complete and exclusive statement of the mutual understanding between you and QENEX
+                LAB, and that these Terms supersede and cancel all previous written and oral agreements, communications
+                and other understandings relating to the subject matter of these Terms. You hereby acknowledge and agree
+                that you are not an employee, agent, partner, or joint venture of QENEX LAB, and you do not have any
+                authority of any kind to bind QENEX LAB in any respect whatsoever.
               </p>
 
               <p>
-                Except as expressly set forth in the section above regarding the arbitration agreement, you and QENEX LAB
-                agree there are no third-party beneficiaries intended under these Terms.
+                Except as expressly set forth in the section above regarding the arbitration agreement, you and QENEX
+                LAB agree there are no third-party beneficiaries intended under these Terms.
               </p>
             </article>
           </section>

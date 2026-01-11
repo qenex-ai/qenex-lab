@@ -3,11 +3,11 @@
  */
 export const config = {
   // Base URL
-  baseUrl: "https://opencode.ai",
+  baseUrl: "https://qenex.ai",
 
   // GitHub
   github: {
-    repoUrl: "https://github.com/anomalyco/opencode",
+    repoUrl: "https://github.com/abdulrahman305/qenex-lab",
     starsFormatted: {
       compact: "50K",
       full: "50,000",
@@ -16,8 +16,8 @@ export const config = {
 
   // Social links
   social: {
-    twitter: "https://x.com/opencode",
-    discord: "https://discord.gg/opencode",
+    twitter: "https://x.com/qenex_lab",
+    discord: "https://discord.gg/qenex-lab",
   },
 
   // Static stats (used on landing page)

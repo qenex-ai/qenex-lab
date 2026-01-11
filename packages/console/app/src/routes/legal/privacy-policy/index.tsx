@@ -33,9 +33,9 @@ export default function PrivacyPolicy() {
 
               <p>
                 Remember that your use of QENEX LAB is at all times subject to our Terms of Use,{" "}
-                <a href="/legal/terms-of-service">https://opencode.ai/legal/terms-of-service</a>, which incorporates
-                this Privacy Policy. Any terms we use in this Policy without defining them have the definitions given to
-                them in the Terms of Use.
+                <a href="/legal/terms-of-service">https://qenex.ai/legal/terms-of-service</a>, which incorporates this
+                Privacy Policy. Any terms we use in this Policy without defining them have the definitions given to them
+                in the Terms of Use.
               </p>
 
               <p>You may print a copy of this Privacy Policy by clicking the print button in your browser.</p>
@@ -295,8 +295,8 @@ export default function PrivacyPolicy() {
                 requirements and enforcing legal terms including: fulfilling our legal obligations under applicable law,
                 regulation, court order or other legal process, such as preventing, detecting and investigating security
                 incidents and potentially illegal or prohibited activities; protecting the rights, property or safety of
-                you, QENEX LAB or another party; enforcing any agreements with you; responding to claims that any posting
-                or other content violates third-party rights; and resolving disputes.
+                you, QENEX LAB or another party; enforcing any agreements with you; responding to claims that any
+                posting or other content violates third-party rights; and resolving disputes.
               </p>
 
               <p>

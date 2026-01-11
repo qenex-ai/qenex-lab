@@ -5,8 +5,8 @@ import { Title, Meta, Link } from "@solidjs/meta"
 import zenLogoLight from "../../asset/zen-ornate-light.svg"
 import { config } from "~/config"
 import zenLogoDark from "../../asset/zen-ornate-dark.svg"
-import compareVideo from "../../asset/lander/opencode-comparison-min.mp4"
-import compareVideoPoster from "../../asset/lander/opencode-comparison-poster.png"
+import compareVideo from "../../asset/lander/qenex-comparison-min.mp4"
+import compareVideoPoster from "../../asset/lander/qenex-comparison-poster.png"
 import avatarDax from "../../asset/lander/avatar-dax.png"
 import avatarJay from "../../asset/lander/avatar-jay.png"
 import avatarFrank from "../../asset/lander/avatar-frank.png"
@@ -35,7 +35,7 @@ export default function Home() {
       <Link rel="canonical" href={`${config.baseUrl}/zen`} />
       <Meta property="og:image" content="/social-share-zen.png" />
       <Meta name="twitter:image" content="/social-share-zen.png" />
-      <Meta name="opencode:auth" content={loggedin() ? "true" : "false"} />
+      <Meta name="qenex:auth" content={loggedin() ? "true" : "false"} />
 
       <div data-component="container">
         <Header zen hideGetStarted />
@@ -47,9 +47,9 @@ export default function Home() {
               <img data-slot="zen logo dark" src={zenLogoDark} alt="zen logo dark" />
               <h1>Reliable optimized models for coding agents</h1>
               <p>
-                Zen gives you access to a curated set of AI models that QENEX LAB has tested and benchmarked specifically
-                for coding agents. No need to worry about inconsistent performance and quality, use validated models
-                that work.
+                Zen gives you access to a curated set of AI models that QENEX LAB has tested and benchmarked
+                specifically for coding agents. No need to worry about inconsistent performance and quality, use
+                validated models that work.
               </p>
               <div data-slot="model-logos">
                 <div>
@@ -304,8 +304,8 @@ export default function Home() {
                 <Faq question="How much does Zen cost?">
                   Zen <a href="/docs/zen/#pricing">charges per request</a> with zero markups, so you pay exactly what
                   the model provider charges. Your total cost depends on usage, and you can set monthly spend limits in
-                  your <a href="/auth">account</a>. To cover costs, QENEX LAB adds only a small payment processing fee of
-                  $1.23 per $20 balance top-up.
+                  your <a href="/auth">account</a>. To cover costs, QENEX LAB adds only a small payment processing fee
+                  of $1.23 per $20 balance top-up.
                 </Faq>
               </li>
               <li>
