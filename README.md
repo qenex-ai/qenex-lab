@@ -280,5 +280,5 @@ MIT License - see [LICENSE](./LICENSE) for details.
 </p>
 
 <p align="center">
-  <sub>© 2024-2026 QENEX LTD. Q-Lang is a trademark of QENEX LTD.</sub>
+  <sub>© 2024-2026 QENEX LTD. All rights reserved.</sub>
 </p>
