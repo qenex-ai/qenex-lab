@@ -44,7 +44,7 @@ All powered by AI agents that understand scientific domains and can write, valid
 | ------------------------ | ----------------------------------------------------------- |
 | **🤖 Scientific Agents** | Specialized AI agents for Chemistry, Physics, Biology, Math |
 | **🔄 Trinity Pipeline**  | Reason → Generate → Validate workflow for all tasks         |
-| **📝 Q-Lang DSL**        | Domain-specific language for scientific constraints         |
+| **📝 Q-Lang**            | QENEX LTD's programming language for scientific computing   |
 | **🛡️ Scout Validation**  | 18-expert validation system for scientific accuracy         |
 | **⚡ High Performance**  | NumPy + Numba + Rust FFI acceleration                       |
 | **🖥️ Modern TUI**        | Beautiful terminal interface for scientific computing       |
@@ -104,8 +104,68 @@ pytest tests/
 | **qenex-astro**      | Astronomy         | Celestial mechanics, orbital dynamics               |
 | **qenex-climate**    | Climate           | Atmospheric modeling, climate simulation            |
 | **qenex-neuro**      | Neuroscience      | Neural systems modeling                             |
-| **qenex-qlang**      | Q-Lang            | Scientific DSL interpreter                          |
+| **qenex-qlang**      | Q-Lang            | QENEX LTD's scientific programming language         |
 | **qenex-accelerate** | Performance       | Rust FFI via PyO3/Maturin                           |
+
+---
+
+## 📝 Q-Lang: QENEX LTD's Scientific Programming Language
+
+**Q-Lang** is a domain-specific programming language developed by **QENEX LTD** specifically for the QENEX LAB scientific computing environment. It provides:
+
+### Features
+
+| Feature              | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| **Physical Laws**    | Define and enforce physical constraints with dimensional analysis |
+| **Unit System**      | Built-in SI unit support with automatic conversions               |
+| **Scientific Types** | Native types for molecules, tensors, sequences, and more          |
+| **Validation**       | Compile-time checking of physical consistency                     |
+| **Interop**          | Seamless integration with Python and Rust                         |
+
+### File Extensions
+
+- `.ql` — Q-Lang source files
+- `.ex` — Q-Lang experiment files
+
+### Example
+
+```ql
+# Define a physical constant with units
+const PLANCK_CONSTANT: Energy * Time = 6.62607015e-34 J·s
+
+# Define a molecule
+molecule H2O {
+    atoms: [O, H, H]
+    bonds: [(0, 1), (0, 2)]
+    geometry: "bent"
+    angle: 104.5 deg
+}
+
+# Define a scientific constraint
+law conservation_of_energy {
+    forall system: System =>
+        system.kinetic_energy + system.potential_energy = const
+}
+
+# Run a calculation
+experiment water_vibration {
+    input: H2O
+    method: DFT(functional="B3LYP", basis="6-31G*")
+    output: frequencies, intensities
+}
+```
+
+### Q-Lang Interpreter
+
+```bash
+# Parse and validate Q-Lang code
+cd workspace/packages/qenex-qlang
+python -m qlang validate experiment.ql
+
+# Execute Q-Lang experiment
+python -m qlang run experiment.ex
+```
 
 ---
 
@@ -217,4 +277,8 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 <p align="center">
   <strong>QENEX LAB</strong> — <em>Precision is paramount. Science demands rigor.</em>
+</p>
+
+<p align="center">
+  <sub>© 2024-2026 QENEX LTD. Q-Lang is a trademark of QENEX LTD.</sub>
 </p>
