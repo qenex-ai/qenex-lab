@@ -2,7 +2,7 @@ import type { Hooks, PluginInput, Plugin as PluginInstance } from "@qenex-lab/pl
 import { Config } from "../config/config"
 import { Bus } from "../bus"
 import { Log } from "../util/log"
-import { createOpencodeClient } from "@qenex-lab/sdk"
+import { createQenexClient } from "@qenex-lab/sdk"
 import { Server } from "../server/server"
 import { BunProc } from "../bun"
 import { Instance } from "../project/instance"
@@ -14,7 +14,7 @@ export namespace Plugin {
   const BUILTIN = ["opencode-copilot-auth@0.0.9", "opencode-anthropic-auth@0.0.5"]
 
   const state = Instance.state(async () => {
-    const client = createOpencodeClient({
+    const client = createQenexClient({
       baseUrl: "http://localhost:4096",
       // @ts-ignore - fetch type incompatibility
       fetch: async (...args) => Server.App().fetch(...args),
