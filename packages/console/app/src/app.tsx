@@ -13,7 +13,7 @@ export default function App() {
       explicitLinks={true}
       root={(props) => (
         <MetaProvider>
-          <Title>opencode</Title>
+          <Title>QENEX LAB</Title>
           <Meta name="description" content="QENEX LAB - The open source coding agent." />
           <Favicon />
           <Font />

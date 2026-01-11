@@ -213,7 +213,7 @@ Every scientific task follows the Trinity workflow:
 ```
 qenex-lab/
 ├── packages/                 # Core packages
-│   ├── opencode/            # TUI engine
+│   ├── opencode/            # TUI engine (internal package name)
 │   ├── app/                 # Desktop app
 │   ├── web/                 # Web interface
 │   ├── ui/                  # UI components
