@@ -24,6 +24,7 @@ export const iconNames = [
   "requesty",
   "poe",
   "perplexity",
+  "qenex",
   "ovhcloud",
   "openrouter",
   "opencode",

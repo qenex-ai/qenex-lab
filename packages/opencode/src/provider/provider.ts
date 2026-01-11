@@ -105,6 +105,28 @@ export namespace Provider {
         options: hasKey ? {} : { apiKey: "public" },
       }
     },
+    async qenex(input) {
+      const hasKey = await (async () => {
+        const env = Env.all()
+        if (input.env.some((item) => env[item])) return true
+        if (await Auth.get(input.id)) return true
+        const config = await Config.get()
+        if (config.provider?.["qenex"]?.options?.apiKey) return true
+        return false
+      })()
+
+      if (!hasKey) {
+        for (const [key, value] of Object.entries(input.models)) {
+          if (value.cost.input === 0) continue
+          delete input.models[key]
+        }
+      }
+
+      return {
+        autoload: Object.keys(input.models).length > 0,
+        options: hasKey ? {} : { apiKey: "public" },
+      }
+    },
     openai: async () => {
       return {
         autoload: false,
@@ -642,6 +664,25 @@ export namespace Provider {
       }
     }
 
+    // Add QENEX provider that inherits from opencode but with QENEX branding
+    if (database["opencode"]) {
+      const opencode = database["opencode"]
+      database["qenex"] = {
+        ...opencode,
+        id: "qenex",
+        name: "QENEX Zen",
+        env: ["QENEX_API_KEY"],
+        models: mapValues(opencode.models, (model) => ({
+          ...model,
+          providerID: "qenex",
+          api: {
+            ...model.api,
+            url: "https://qenex.ai/zen/v1",
+          },
+        })),
+      }
+    }
+
     function mergeProvider(providerID: string, provider: Partial<Info>) {
       const existing = providers[providerID]
       if (existing) {
@@ -1059,7 +1100,7 @@ export namespace Provider {
         "gemini-2.5-flash",
         "gpt-5-nano",
       ]
-      if (providerID.startsWith("opencode")) {
+      if (providerID.startsWith("opencode") || providerID.startsWith("qenex")) {
         priority = ["gpt-5-nano"]
       }
       if (providerID.startsWith("github-copilot")) {
@@ -1073,7 +1114,13 @@ export namespace Provider {
       }
     }
 
-    // Check if opencode provider is available before using it
+    // Check if qenex provider is available before using it (preferred)
+    const qenexProvider = await state().then((state) => state.providers["qenex"])
+    if (qenexProvider && qenexProvider.models["gpt-5-nano"]) {
+      return getModel("qenex", "gpt-5-nano")
+    }
+
+    // Fallback to opencode provider
     const opencodeProvider = await state().then((state) => state.providers["opencode"])
     if (opencodeProvider && opencodeProvider.models["gpt-5-nano"]) {
       return getModel("opencode", "gpt-5-nano")
