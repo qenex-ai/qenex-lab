@@ -108,36 +108,33 @@ export default function Download() {
               <span>[1]</span> QENEX LAB Terminal
             </div>
             <div data-component="section-content">
-              <button
-                data-component="cli-row"
-                onClick={handleCopyClick("curl -fsSL https://opencode.ai/install | bash")}
-              >
+              <button data-component="cli-row" onClick={handleCopyClick("curl -fsSL https://qenex.ai/install | bash")}>
                 <code>
-                  curl -fsSL https://<strong>opencode.ai/install</strong> | bash
+                  curl -fsSL https://<strong>qenex.ai/install</strong> | bash
                 </code>
                 <CopyStatus />
               </button>
-              <button data-component="cli-row" onClick={handleCopyClick("npm i -g opencode-ai")}>
+              <button data-component="cli-row" onClick={handleCopyClick("npm i -g qenex-lab")}>
                 <code>
-                  npm i -g <strong>opencode-ai</strong>
+                  npm i -g <strong>qenex-lab</strong>
                 </code>
                 <CopyStatus />
               </button>
-              <button data-component="cli-row" onClick={handleCopyClick("bun add -g opencode-ai")}>
+              <button data-component="cli-row" onClick={handleCopyClick("bun add -g qenex-lab")}>
                 <code>
-                  bun add -g <strong>opencode-ai</strong>
+                  bun add -g <strong>qenex-lab</strong>
                 </code>
                 <CopyStatus />
               </button>
-              <button data-component="cli-row" onClick={handleCopyClick("brew install opencode")}>
+              <button data-component="cli-row" onClick={handleCopyClick("brew install qenex")}>
                 <code>
-                  brew install <strong>opencode</strong>
+                  brew install <strong>qenex</strong>
                 </code>
                 <CopyStatus />
               </button>
-              <button data-component="cli-row" onClick={handleCopyClick("paru -S opencode")}>
+              <button data-component="cli-row" onClick={handleCopyClick("paru -S qenex")}>
                 <code>
-                  paru -S <strong>opencode</strong>
+                  paru -S <strong>qenex</strong>
                 </code>
                 <CopyStatus />
               </button>
@@ -149,9 +146,9 @@ export default function Download() {
               <span>[2]</span> QENEX LAB Desktop (Beta)
             </div>
             <div data-component="section-content">
-              <button data-component="cli-row" onClick={handleCopyClick("brew install --cask opencode-desktop")}>
+              <button data-component="cli-row" onClick={handleCopyClick("brew install --cask qenex-desktop")}>
                 <code>
-                  brew install --cask <strong>opencode-desktop</strong>
+                  brew install --cask <strong>qenex-desktop</strong>
                 </code>
                 <CopyStatus />
               </button>
@@ -287,7 +284,7 @@ export default function Download() {
                   </span>
                   <span>VS Code</span>
                 </div>
-                <a href="https://opencode.ai/docs/ide/" data-component="action-button">
+                <a href="https://qenex.ai/docs/ide/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -311,7 +308,7 @@ export default function Download() {
                   </span>
                   <span>Cursor</span>
                 </div>
-                <a href="https://opencode.ai/docs/ide/" data-component="action-button">
+                <a href="https://qenex.ai/docs/ide/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -328,7 +325,7 @@ export default function Download() {
                   </span>
                   <span>Zed</span>
                 </div>
-                <a href="https://opencode.ai/docs/ide/" data-component="action-button">
+                <a href="https://qenex.ai/docs/ide/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -345,7 +342,7 @@ export default function Download() {
                   </span>
                   <span>Windsurf</span>
                 </div>
-                <a href="https://opencode.ai/docs/ide/" data-component="action-button">
+                <a href="https://qenex.ai/docs/ide/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -362,7 +359,7 @@ export default function Download() {
                   </span>
                   <span>VSCodium</span>
                 </div>
-                <a href="https://opencode.ai/docs/ide/" data-component="action-button">
+                <a href="https://qenex.ai/docs/ide/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -386,7 +383,7 @@ export default function Download() {
                   </span>
                   <span>GitHub</span>
                 </div>
-                <a href="https://opencode.ai/docs/github/" data-component="action-button">
+                <a href="https://qenex.ai/docs/github/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -403,7 +400,7 @@ export default function Download() {
                   </span>
                   <span>GitLab</span>
                 </div>
-                <a href="https://opencode.ai/docs/gitlab/" data-component="action-button">
+                <a href="https://qenex.ai/docs/gitlab/" data-component="action-button">
                   Install
                 </a>
               </div>
@@ -445,8 +442,8 @@ export default function Download() {
             </li>
             <li>
               <Faq question="How much does QENEX LAB cost?">
-                QENEX LAB is 100% free to use. Any additional costs will come from your subscription to a model provider.
-                While QENEX LAB works with any model provider, we recommend using <A href="/zen">Zen</A>.
+                QENEX LAB is 100% free to use. Any additional costs will come from your subscription to a model
+                provider. While QENEX LAB works with any model provider, we recommend using <A href="/zen">Zen</A>.
               </Faq>
             </li>
             <li>

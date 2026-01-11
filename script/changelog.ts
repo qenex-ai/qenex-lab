@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
-import { createOpencode } from "@opencode-ai/sdk"
+import { createOpencode } from "@qenex-lab/sdk"
 import { parseArgs } from "util"
 
 export const team = [
   "actions-user",
-  "opencode",
+  "qenex-lab",
   "rekram1-node",
   "thdxr",
   "kommander",
@@ -14,11 +14,11 @@ export const team = [
   "fwang",
   "adamdotdevin",
   "iamdavidhill",
-  "opencode-agent[bot]",
+  "qenex-lab-agent[bot]",
 ]
 
 export async function getLatestRelease() {
-  return fetch("https://api.github.com/repos/anomalyco/opencode/releases/latest")
+  return fetch("https://api.github.com/repos/abdulrahman305/qenex-lab/releases/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)
       return res.json()
@@ -39,7 +39,7 @@ export async function getCommits(from: string, to: string): Promise<Commit[]> {
 
   // Get commit data with GitHub usernames from the API
   const compare =
-    await $`gh api "/repos/anomalyco/opencode/compare/${fromRef}...${toRef}" --jq '.commits[] | {sha: .sha, login: .author.login, message: .commit.message}'`.text()
+    await $`gh api "/repos/abdulrahman305/qenex-lab/compare/${fromRef}...${toRef}" --jq '.commits[] | {sha: .sha, login: .author.login, message: .commit.message}'`.text()
 
   const commitData = new Map<string, { login: string | null; message: string }>()
   for (const line of compare.split("\n").filter(Boolean)) {
@@ -139,7 +139,7 @@ async function summarizeCommit(opencode: Awaited<ReturnType<typeof createOpencod
     .prompt({
       path: { id: session.data!.id },
       body: {
-        model: { providerID: "opencode", modelID: "claude-sonnet-4-5" },
+        model: { providerID: "qenex", modelID: "claude-sonnet-4-5" },
         tools: {
           "*": false,
         },
@@ -195,7 +195,7 @@ export async function getContributors(from: string, to: string) {
   const fromRef = from.startsWith("v") ? from : `v${from}`
   const toRef = to === "HEAD" ? to : to.startsWith("v") ? to : `v${to}`
   const compare =
-    await $`gh api "/repos/anomalyco/opencode/compare/${fromRef}...${toRef}" --jq '.commits[] | {login: .author.login, message: .commit.message}'`.text()
+    await $`gh api "/repos/abdulrahman305/qenex-lab/compare/${fromRef}...${toRef}" --jq '.commits[] | {login: .author.login, message: .commit.message}'`.text()
   const contributors = new Map<string, string[]>()
 
   for (const line of compare.split("\n").filter(Boolean)) {

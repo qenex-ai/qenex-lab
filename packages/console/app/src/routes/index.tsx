@@ -112,7 +112,7 @@ export default function Home() {
                       <span data-slot="command-script">
                         <span>curl -fsSL </span>
                         <span data-slot="protocol">https://</span>
-                        <span data-slot="highlight">opencode.ai/install</span>
+                        <span data-slot="highlight">qenex.ai/install</span>
                         <span> | bash</span>
                       </span>
                       <CopyStatus />
@@ -122,7 +122,7 @@ export default function Home() {
                     <button data-copy data-slot="command" onClick={handleCopyClick}>
                       <span>
                         <span data-slot="protocol">npm i -g </span>
-                        <span data-slot="highlight">opencode-ai</span>
+                        <span data-slot="highlight">qenex-lab</span>
                       </span>
                       <CopyStatus />
                     </button>
@@ -131,7 +131,7 @@ export default function Home() {
                     <button data-copy data-slot="command" onClick={handleCopyClick}>
                       <span>
                         <span data-slot="protocol">bun add -g </span>
-                        <span data-slot="highlight">opencode-ai</span>
+                        <span data-slot="highlight">qenex-lab</span>
                       </span>
                       <CopyStatus />
                     </button>
@@ -140,7 +140,7 @@ export default function Home() {
                     <button data-copy data-slot="command" onClick={handleCopyClick}>
                       <span>
                         <span data-slot="protocol">brew install </span>
-                        <span data-slot="highlight">opencode</span>
+                        <span data-slot="highlight">qenex</span>
                       </span>
                       <CopyStatus />
                     </button>
@@ -149,7 +149,7 @@ export default function Home() {
                     <button data-copy data-slot="command" onClick={handleCopyClick}>
                       <span>
                         <span data-slot="protocol">paru -S </span>
-                        <span data-slot="highlight">opencode</span>
+                        <span data-slot="highlight">qenex</span>
                       </span>
                       <CopyStatus />
                     </button>
@@ -691,8 +691,8 @@ export default function Home() {
               </li>
               <li>
                 <Faq question="How much does QENEX LAB cost?">
-                  QENEX LAB is 100% free to use. It also comes with a set of free models. There might be additional costs
-                  if you connect any other provider.
+                  QENEX LAB is 100% free to use. It also comes with a set of free models. There might be additional
+                  costs if you connect any other provider.
                 </Faq>
               </li>
               <li>

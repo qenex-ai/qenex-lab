@@ -18,14 +18,14 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Install opencode
-        run: curl -fsSL https://opencode.ai/install | bash
+      - name: Install QENEX LAB
+        run: curl -fsSL https://qenex.ai/install | bash
 
       - name: Check for duplicate issues
         env:
-          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          QENEX_API_KEY: ${{ secrets.QENEX_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENCODE_PERMISSION: |
+          QENEX_PERMISSION: |
             {
               "bash": {
                 "*": "deny",
@@ -34,7 +34,7 @@ jobs:
               "webfetch": "deny"
             }
         run: |
-          opencode run -m opencode/claude-haiku-4-5 "A new issue has been created:'
+          qenex run -m qenex/claude-haiku-4-5 "A new issue has been created:'
 
           Issue number:
           ${{ github.event.issue.number }}
