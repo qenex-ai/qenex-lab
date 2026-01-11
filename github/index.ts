@@ -141,7 +141,7 @@ try {
   const comment = await createComment()
   commentId = comment.data.id
 
-  // Setup opencode session
+  // Setup qenex session
   const repoData = await fetchRepo()
   session = await client.session.create<true>().then((r) => r.data)
   await subscribeSessionEvents()
