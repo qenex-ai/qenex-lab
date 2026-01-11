@@ -30,7 +30,7 @@ QENEX LAB is a Scientific Intelligence Laboratory built on the OpenCode TUI fram
 
 ```bash
 # Clone the repository
-git clone https://github.com/qenex-lab/qenex-lab.git
+git clone https://github.com/abdulrahman305/qenex-lab.git
 cd qenex-lab
 
 # Install dependencies
