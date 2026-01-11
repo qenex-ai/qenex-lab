@@ -1,32 +1,59 @@
 <p align="center">
-  <a href="https://qenex-lab.ai">
+  <a href="https://github.com/abdulrahman305/qenex-lab">
     <picture>
       <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
       <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="QENEX LAB logo">
+      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="QENEX LAB logo" width="400">
     </picture>
   </a>
 </p>
-<p align="center"><strong>QENEX LAB</strong> - Scientific Intelligence Laboratory</p>
-<p align="center">The open source AI coding agent for scientific computing and discovery.</p>
+
+<h1 align="center">QENEX LAB</h1>
+<p align="center"><strong>Scientific Intelligence Laboratory</strong></p>
+<p align="center">
+  <em>AI-powered scientific computing for Physics, Chemistry, Biology & Mathematics</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/abdulrahman305/qenex-lab/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/abdulrahman305/qenex-lab"><img src="https://img.shields.io/badge/TypeScript-5.8-blue.svg" alt="TypeScript"></a>
+  <a href="https://github.com/abdulrahman305/qenex-lab"><img src="https://img.shields.io/badge/Python-3.12-green.svg" alt="Python"></a>
+  <a href="https://github.com/abdulrahman305/qenex-lab"><img src="https://img.shields.io/badge/Bun-1.3.6-orange.svg" alt="Bun"></a>
+</p>
 
 ---
 
-## Overview
+## 🔬 What is QENEX LAB?
 
-QENEX LAB is a Scientific Intelligence Laboratory built on the OpenCode TUI framework. It provides specialized tools for scientific computing across Physics, Chemistry, Biology, and Mathematics.
+**QENEX LAB** is an autonomous scientific intelligence system that combines AI coding agents with specialized scientific computing packages. It enables researchers and scientists to:
 
-### Key Features
+- 🧪 Run **quantum chemistry** calculations (Hartree-Fock, DFT)
+- ⚛️ Simulate **physics** systems (Ising models, tensor networks)
+- 🧬 Analyze **biological** data (genomics, protein folding)
+- 📐 Perform **mathematical** proofs and verification
+- 🌌 Model **astronomical** phenomena
+- 🌍 Run **climate** simulations
 
-- **Trinity Pipeline**: Reason → Generate → Validate for all scientific tasks
-- **Scientific Agents**: Specialized agents for Chemistry, Physics, Biology, and Math
-- **Q-Lang Support**: Domain-specific language for scientific constraints and laws
-- **Scout CLI Integration**: 18-expert validation system
-- **Full OpenCode TUI**: All the power of OpenCode for general development
+All powered by AI agents that understand scientific domains and can write, validate, and execute scientific code.
 
 ---
 
-## Installation
+## ✨ Key Features
+
+| Feature                  | Description                                                 |
+| ------------------------ | ----------------------------------------------------------- |
+| **🤖 Scientific Agents** | Specialized AI agents for Chemistry, Physics, Biology, Math |
+| **🔄 Trinity Pipeline**  | Reason → Generate → Validate workflow for all tasks         |
+| **📝 Q-Lang DSL**        | Domain-specific language for scientific constraints         |
+| **🛡️ Scout Validation**  | 18-expert validation system for scientific accuracy         |
+| **⚡ High Performance**  | NumPy + Numba + Rust FFI acceleration                       |
+| **🖥️ Modern TUI**        | Beautiful terminal interface for scientific computing       |
+
+---
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
 # Clone the repository
@@ -36,11 +63,11 @@ cd qenex-lab
 # Install dependencies
 bun install
 
-# Run the TUI
+# Run QENEX LAB
 bun run dev
 ```
 
-### Scientific Workspace Setup
+### Scientific Workspace
 
 ```bash
 # Navigate to scientific workspace
@@ -49,101 +76,145 @@ cd workspace
 # Activate Python environment
 source venv/bin/activate
 
+# Run a quantum chemistry calculation
+python -c "
+from packages.qenex_chem.src.solver import HartreeFockSolver
+from packages.qenex_chem.src.molecule import Molecule
+
+h2 = Molecule.from_atoms([('H', [0, 0, 0]), ('H', [0, 0, 1.4])])
+solver = HartreeFockSolver(h2)
+energy = solver.solve()
+print(f'H2 Energy: {energy:.6f} Hartree')
+"
+
 # Run tests
 pytest tests/
 ```
 
 ---
 
-## Scientific Packages
+## 📦 Scientific Packages
 
-| Package            | Domain            | Description                                |
-| ------------------ | ----------------- | ------------------------------------------ |
-| `qenex_chem`       | Quantum Chemistry | HF, DFT, molecular integrals               |
-| `qenex-bio`        | Biology           | Genomics, proteomics, systems biology      |
-| `qenex-physics`    | Physics           | Lattice models, tensors, quantum mechanics |
-| `qenex-math`       | Mathematics       | Formal proofs, numerical analysis          |
-| `qenex-qlang`      | Q-Lang            | Scientific DSL interpreter                 |
-| `qenex-astro`      | Astronomy         | Celestial mechanics, cosmology             |
-| `qenex-neuro`      | Neuroscience      | Neural systems modeling                    |
-| `qenex-climate`    | Climate           | Climate and atmospheric modeling           |
-| `qenex-accelerate` | Performance       | Rust FFI via PyO3/Maturin                  |
-
----
-
-## Agents
-
-QENEX LAB includes specialized scientific agents:
-
-- **qenex-lab** - Sovereign Agent for orchestrating scientific discovery
-- **qenex-chem** - Quantum chemistry specialist
-- **qenex-physics** - Physics and theoretical physics
-- **qenex-bio** - Computational biology and bioinformatics
-- **qenex-math** - Mathematics and formal verification
-
-### Built-in Agents (from OpenCode)
-
-- **build** - Default, full access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-
-Switch agents with the `Tab` key or use `@agent-name` in messages.
+| Package              | Domain            | Capabilities                                        |
+| -------------------- | ----------------- | --------------------------------------------------- |
+| **qenex_chem**       | Quantum Chemistry | HF, DFT, molecular integrals, geometry optimization |
+| **qenex-physics**    | Physics           | Ising models, tensor networks, phase transitions    |
+| **qenex-bio**        | Biology           | Genomics, protein folding, systems biology          |
+| **qenex-math**       | Mathematics       | Formal proofs, symbolic computation                 |
+| **qenex-astro**      | Astronomy         | Celestial mechanics, orbital dynamics               |
+| **qenex-climate**    | Climate           | Atmospheric modeling, climate simulation            |
+| **qenex-neuro**      | Neuroscience      | Neural systems modeling                             |
+| **qenex-qlang**      | Q-Lang            | Scientific DSL interpreter                          |
+| **qenex-accelerate** | Performance       | Rust FFI via PyO3/Maturin                           |
 
 ---
 
-## The Trinity Pipeline
+## 🤖 Scientific Agents
 
-For all scientific tasks, follow:
+QENEX LAB includes specialized AI agents that understand scientific domains:
 
-1. **🧠 REASON**: Decompose the problem, understand the physics/math
-2. **💻 GENERATE**: Write the implementation (code/proof/model)
-3. **🛡️ VALIDATE**: Verify with tests, dimensional analysis, expert validation
+| Agent             | Specialty                                            |
+| ----------------- | ---------------------------------------------------- |
+| **qenex-lab**     | 👑 Sovereign orchestrator for multi-domain discovery |
+| **qenex-chem**    | ⚗️ Quantum chemistry, molecular simulations          |
+| **qenex-physics** | ⚛️ Theoretical physics, lattice models               |
+| **qenex-bio**     | 🧬 Genomics, proteomics, bioinformatics              |
+| **qenex-math**    | 📐 Formal proofs, numerical analysis                 |
+| **qenex-astro**   | 🌌 Astrophysics, celestial mechanics                 |
+| **qenex-climate** | 🌍 Climate modeling, atmospheric dynamics            |
+| **qenex-neuro**   | 🧠 Neural systems, computational neuroscience        |
+
+Switch agents with `Tab` or use `@agent-name` in messages.
 
 ---
 
-## Documentation
+## 🔄 The Trinity Pipeline
 
-- [AGENTS.md](workspace/AGENTS.md) - Agent operational guidelines
-- [Scientific Packages](workspace/packages/) - Package documentation
-- [Q-Lang Guide](workspace/packages/qenex-qlang/) - Q-Lang documentation
+Every scientific task follows the Trinity workflow:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     TRINITY PIPELINE                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   🧠 REASON        💻 GENERATE       🛡️ VALIDATE           │
+│   ─────────        ───────────       ──────────            │
+│   • Decompose      • Write code      • Run tests           │
+│   • Understand     • Implement       • Check units         │
+│   • Hypothesize    • Document        • Verify physics      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Architecture
+## 📁 Project Structure
 
 ```
 qenex-lab/
-├── packages/
-│   ├── opencode/          # Core OpenCode TUI
-│   ├── ui/                # UI components
-│   ├── web/               # Web interface
-│   └── ...
-├── workspace/             # Scientific workspace
-│   ├── packages/          # Scientific packages
-│   │   ├── qenex_chem/    # Quantum Chemistry
-│   │   ├── qenex-bio/     # Biology
-│   │   ├── qenex-physics/ # Physics
+├── packages/                 # Core packages
+│   ├── opencode/            # TUI engine
+│   ├── app/                 # Desktop app
+│   ├── web/                 # Web interface
+│   ├── ui/                  # UI components
+│   └── sdk/                 # SDK
+├── workspace/               # 🔬 Scientific workspace
+│   ├── packages/            # Scientific packages
+│   │   ├── qenex_chem/      # Quantum Chemistry
+│   │   ├── qenex-physics/   # Physics
+│   │   ├── qenex-bio/       # Biology
+│   │   ├── qenex-math/      # Mathematics
 │   │   └── ...
-│   ├── tests/             # Test suite
-│   ├── experiments/       # Research scripts
-│   └── reports/           # Generated reports
-├── tui/                   # Rust TUI dashboard
-├── interface/             # Backend/Frontend
-└── .opencode/
-    └── agent/             # Agent configurations
+│   ├── tests/               # Test suite (793 tests)
+│   ├── experiments/         # Research scripts
+│   └── reports/             # Generated reports
+├── .opencode/
+│   └── agent/               # Agent configurations
+└── interface/               # Backend services
 ```
 
 ---
 
-## Contributing
+## 🧪 Running Tests
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+```bash
+# All tests
+cd workspace && source venv/bin/activate && pytest
+
+# Specific domain
+pytest tests/validation/test_eri.py -v
+
+# With coverage
+pytest --cov=packages tests/
+```
 
 ---
 
-## License
+## 📊 Physical Constants
 
-MIT License
+QENEX LAB uses NIST CODATA 2018 constants:
+
+```python
+BOHR_TO_ANGSTROM = 0.529177210903
+ANGSTROM_TO_BOHR = 1.8897259886
+HARTREE_TO_EV = 27.211386245988
+HARTREE_TO_KCAL = 627.5094740631
+```
 
 ---
 
-**QENEX LAB** - _Precision is paramount. Science demands rigor._
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](./LICENSE) for details.
+
+---
+
+<p align="center">
+  <strong>QENEX LAB</strong> — <em>Precision is paramount. Science demands rigor.</em>
+</p>
