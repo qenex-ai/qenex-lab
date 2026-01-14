@@ -19,6 +19,7 @@ from typing import List, Dict, Tuple, Optional
 from datetime import datetime
 import json
 import hashlib
+from .qlang_interface import QLangTissueEngine, QLangMolecule, QLangValue, QLangUnit
 
 
 @dataclass
@@ -114,6 +115,7 @@ class BlindValidationProtocol:
         self.predictions_locked = False
         self.outcomes_revealed = False
         self.test_id = self._generate_test_id()
+        self.qlang_engine = QLangTissueEngine()  # Initialize Q-Lang engine
 
     def _generate_test_id(self) -> str:
         """Generate unique test ID with timestamp"""
@@ -826,11 +828,47 @@ class BlindValidationProtocol:
         # Cap risk at 1.0
         risk = min(1.0, risk)
 
+        # === GENERATE Q-LANG PROOF ===
+        qlang_proof = self._generate_qlang_proof(mol)
+
         reasoning = (
             "; ".join(reasons) if reasons else "No significant risk factors identified"
         )
 
+        if qlang_proof:
+            reasoning += f" | Q-LANG PROOF: {qlang_proof}"
+
         return risk, confidence, reasoning
+
+    def _generate_qlang_proof(self, mol: BlindTestMolecule) -> str:
+        """
+        Generate formal Q-Lang scientific proof for the prediction.
+        """
+        # Create Q-Lang molecule
+        qmol = self.qlang_engine.from_descriptors(
+            mol.name,
+            {
+                "molecular_weight": mol.molecular_weight,
+                "logP": mol.logP,
+                "tpsa": mol.tpsa,
+                "num_hbd": mol.num_hbd,
+                "num_hba": mol.num_hba,
+            },
+        )
+
+        # Evaluate laws
+        eval_result = self.qlang_engine.evaluate_molecule(qmol)
+
+        proofs = []
+        for law_eval in eval_result["laws_evaluated"]:
+            if law_eval["applicable"] and law_eval["law"] not in [
+                "Lipinski_Ro5",
+                "renal_clearance",
+            ]:
+                # Only cite relevant toxicity laws
+                proofs.append(f"VIOLATES {law_eval['law']}")
+
+        return ", ".join(proofs) if proofs else ""
 
     def reveal_outcomes(self, outcomes: Dict[str, Dict]) -> None:
         """
