@@ -556,6 +556,132 @@ class QLangTissueEngine:
             reference="Blind Validation Study (Tier 15)",
         )
 
+        # ============================================================
+        # DOMAIN 2: METABOLISM & ENZYMOLOGY (CYP450)
+        # ============================================================
+
+        # CYP3A4 Substrate Liability
+        self.laws["CYP3A4_substrate"] = QLangLaw(
+            name="CYP3A4_substrate",
+            description="High likelihood of CYP3A4 metabolism (rapid clearance)",
+            requires=[
+                QLangConstraint("logP", ">", QLangValue(3.0)),
+                QLangConstraint("MW", ">", QLangValue(300, QLangUnit.DALTON)),
+                QLangConstraint("HBD", "<=", QLangValue(2)),
+            ],
+            predicts=[
+                QLangConstraint(
+                    "metabolic_clearance", ">", QLangValue(10, QLangUnit.ML_MIN_KG)
+                ),
+                QLangConstraint("bioavailability", "<", QLangValue(0.5)),
+            ],
+            confidence=0.75,
+            reference="Metabolism Rules (Smith et al.)",
+        )
+
+        # CYP2D6 Inhibitor (Drug-Drug Interaction Risk)
+        self.laws["CYP2D6_inhibition"] = QLangLaw(
+            name="CYP2D6_inhibition",
+            description="Basic amines causing CYP2D6 inhibition/DDI",
+            requires=[
+                QLangConstraint("logP", ">", QLangValue(2.0)),
+                QLangConstraint("HBA", "<=", QLangValue(4)),
+                # Note: Requires basic nitrogen (simplified here via HBD/HBA pattern)
+                QLangConstraint("HBD", ">=", QLangValue(1)),
+            ],
+            predicts=[
+                QLangConstraint("DDI_risk", ">", QLangValue(0.6)),
+            ],
+            confidence=0.7,
+            reference="Guidance for Industry: DDI",
+        )
+
+        # ============================================================
+        # DOMAIN 3: GENOTOXICITY & SAFETY
+        # ============================================================
+
+        # Genotoxicity Structural Alert (Ashby-Tennant)
+        self.laws["genotoxicity_alert"] = QLangLaw(
+            name="genotoxicity_alert",
+            description="Potential mutagenicity based on structural properties",
+            requires=[
+                QLangConstraint("MW", "<", QLangValue(200, QLangUnit.DALTON)),
+                # Small electrophiles often reactive
+                QLangConstraint("logP", "<", QLangValue(1.5)),
+                QLangConstraint("TPSA", "<", QLangValue(40, QLangUnit.ANGSTROM_SQ)),
+            ],
+            predicts=[
+                QLangConstraint("ames_test", "==", QLangValue(1.0)),  # Positive
+                QLangConstraint("safety_flag", "==", QLangValue(1.0)),
+            ],
+            confidence=0.65,
+            reference="Ashby-Tennant Structural Alerts",
+        )
+
+        # hERG Blockade (QT Prolongation)
+        self.laws["hERG_blockade"] = QLangLaw(
+            name="hERG_blockade",
+            description="Risk of QT interval prolongation and Torsades de Pointes",
+            requires=[
+                QLangConstraint("logP", ">", QLangValue(3.5)),
+                # Basic amine center + lipophilic tail pattern
+                QLangConstraint("MW", ">", QLangValue(350, QLangUnit.DALTON)),
+                QLangConstraint("TPSA", "<", QLangValue(60, QLangUnit.ANGSTROM_SQ)),
+            ],
+            predicts=[
+                QLangConstraint(
+                    "IC50_hERG", "<", QLangValue(1.0, QLangUnit.MICROMOLAR)
+                ),
+                QLangConstraint("cardiotoxicity_risk", ">", QLangValue(0.8)),
+            ],
+            confidence=0.85,
+            reference="Redfern et al. Cardiovasc Res",
+        )
+
+        # ============================================================
+        # DOMAIN 4: PHYSICOCHEMISTRY & SOLUBILITY
+        # ============================================================
+
+        # Aqueous Solubility (General Solubility Equation)
+        self.laws["poor_solubility"] = QLangLaw(
+            name="poor_solubility",
+            description="Likelihood of poor aqueous solubility (< 10 µM)",
+            requires=[
+                QLangConstraint("logP", ">", QLangValue(4.0)),
+                QLangConstraint("MW", ">", QLangValue(400, QLangUnit.DALTON)),
+            ],
+            predicts=[
+                QLangConstraint(
+                    "solubility", "<", QLangValue(10, QLangUnit.MICROMOLAR)
+                ),
+                QLangConstraint("formulation_difficulty", ">", QLangValue(0.8)),
+            ],
+            confidence=0.8,
+            reference="Yalkowsky General Solubility Equation",
+        )
+
+        # ============================================================
+        # DOMAIN 5: SYNTHETIC FEASIBILITY
+        # ============================================================
+
+        # High Synthetic Complexity
+        self.laws["synthetic_complexity"] = QLangLaw(
+            name="synthetic_complexity",
+            description="Molecule likely requires >10 synthetic steps",
+            requires=[
+                QLangConstraint("MW", ">", QLangValue(600, QLangUnit.DALTON)),
+                QLangConstraint("TPSA", ">", QLangValue(120, QLangUnit.ANGSTROM_SQ)),
+                # Proxy for chiral centers / complexity
+                QLangConstraint("HBA", ">", QLangValue(10)),
+            ],
+            predicts=[
+                QLangConstraint("synthetic_steps", ">", QLangValue(10)),
+                QLangConstraint("cost_of_goods", ">", QLangValue(0.8)),
+            ],
+            confidence=0.7,
+            reference="Medicinal Chemistry Intuition",
+        )
+
     def parse_molecule(self, qlang_text: str) -> QLangMolecule:
         """Parse Q-Lang molecule definition"""
 
