@@ -7,15 +7,24 @@
 //! - Parallel computation with Rayon (strict CPU pinning)
 //! - ERIKey cache monitoring via Llama Scout integration
 //! - High-precision Boys function implementation
+//! - PROMETHEUS UNCHAINED BLAS bindings (AVX-512 optimized)
 
 use pyo3::prelude::*;
-use numpy::{IntoPyArray, PyArray4, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::types::PyModule;
+use numpy::{PyArray4, PyReadonlyArray1, PyReadonlyArray2, IntoPyArray};
 use ndarray::Array4;
 use rayon::prelude::*;
 use std::f64::consts::PI;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
 use once_cell::sync::Lazy;
+
+// PROMETHEUS UNCHAINED bindings
+mod prometheus;
+use prometheus::register_prometheus;
+
+// Libm for high-precision math
+use libm::erf;
 
 // ============================================================================
 // Global Statistics for Llama Scout Monitoring
@@ -133,7 +142,8 @@ impl ERIKey {
 /// Uses different evaluation strategies based on the argument:
 /// - Small t: Taylor series expansion
 /// - Large t: Asymptotic expansion  
-/// - Intermediate: Numerical integration
+/// - Intermediate: Numerical integration (Composite Simpson's Rule)
+#[inline]
 fn boys_function(n: i32, t: f64) -> f64 {
     if t < 1e-10 {
         // Taylor series for small t
@@ -147,23 +157,40 @@ fn boys_function(n: i32, t: f64) -> f64 {
         return double_factorial * (PI).sqrt() / (2.0_f64.powi(n + 1) * t.powf(n as f64 + 0.5));
     }
     
-    // For F_0(t), use exact formula with error function
+    // For F_0(t), use exact formula with error function (using libm::erf for accuracy)
     if n == 0 {
         return 0.5 * (PI / t).sqrt() * erf(t.sqrt());
     }
     
-    // For intermediate t and n > 0, use numerical integration (midpoint rule)
-    // This is stable and accurate for our purposes
-    let steps = 500;
-    let dt = 1.0 / steps as f64;
-    let mut result = 0.0;
+    // For intermediate t and n > 0, use Composite Simpson's Rule
+    // This is much more accurate than the midpoint rule
+    // N = 200 intervals (must be even) for high precision
+    let intervals = 200;
+    let h = 1.0 / intervals as f64;
+    let h_div_3 = h / 3.0;
     
-    for i in 0..steps {
-        let u = (i as f64 + 0.5) * dt;
-        result += u.powi(2 * n) * (-t * u * u).exp();
+    // f(u) = u^(2n) * exp(-t * u^2)
+    // f(0) = 0 for n > 0
+    // f(1) = exp(-t)
+    let f_0 = 0.0;
+    let f_1 = (-t).exp();
+    
+    let mut sum_odd = 0.0;
+    let mut sum_even = 0.0;
+    
+    // Loop for odd indices: 1, 3, ..., N-1
+    for i in (1..intervals).step_by(2) {
+        let u = i as f64 * h;
+        sum_odd += u.powi(2 * n) * (-t * u * u).exp();
     }
     
-    result * dt
+    // Loop for even indices: 2, 4, ..., N-2
+    for i in (2..intervals).step_by(2) {
+        let u = i as f64 * h;
+        sum_even += u.powi(2 * n) * (-t * u * u).exp();
+    }
+    
+    h_div_3 * (f_0 + f_1 + 4.0 * sum_odd + 2.0 * sum_even)
 }
 
 /// Double factorial: n!! = n * (n-2) * (n-4) * ... * 1 (or 2)
@@ -180,23 +207,8 @@ fn double_factorial(n: i32) -> f64 {
     result
 }
 
-/// Error function approximation (Abramowitz and Stegun)
-fn erf(x: f64) -> f64 {
-    let a1 =  0.254829592;
-    let a2 = -0.284496736;
-    let a3 =  1.421413741;
-    let a4 = -1.453152027;
-    let a5 =  1.061405429;
-    let p  =  0.3275911;
-    
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    
-    let t = 1.0 / (1.0 + p * x);
-    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-    
-    sign * y
-}
+// Remove local erf implementation in favor of libm::erf
+// fn erf(x: f64) -> f64 { ... } is replaced by libm::erf imported above
 
 // ============================================================================
 // Gaussian Product Theorem Helpers
@@ -792,14 +804,14 @@ fn normalize_primitive(alpha: f64, l: i32, m: i32, n: i32) -> f64 {
 #[pyfunction]
 fn compute_eri<'py>(
     py: Python<'py>,
-    coords: PyReadonlyArray2<f64>,
-    exps: PyReadonlyArray1<f64>,
-    norms: PyReadonlyArray1<f64>,
-    lmns: PyReadonlyArray2<i64>,
-    at_idx: PyReadonlyArray1<i64>,
-    bas_idx: PyReadonlyArray1<i64>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
     n_basis: usize,
-) -> &'py PyArray4<f64> {
+) -> Bound<'py, PyArray4<f64>> {
     let coords = coords.as_array();
     let exps = exps.as_array();
     let norms = norms.as_array();
@@ -872,7 +884,7 @@ fn compute_eri<'py>(
         }
     }
     
-    eri_tensor.into_pyarray(py)
+    eri_tensor.into_pyarray(py).into()
 }
 
 /// Compute ERIs in parallel using Rayon with strict CPU pinning
@@ -887,14 +899,14 @@ fn compute_eri<'py>(
 #[pyfunction]
 fn compute_eri_parallel<'py>(
     py: Python<'py>,
-    coords: PyReadonlyArray2<f64>,
-    exps: PyReadonlyArray1<f64>,
-    norms: PyReadonlyArray1<f64>,
-    lmns: PyReadonlyArray2<i64>,
-    at_idx: PyReadonlyArray1<i64>,
-    bas_idx: PyReadonlyArray1<i64>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
     n_basis: usize,
-) -> &'py PyArray4<f64> {
+) -> Bound<'py, PyArray4<f64>> {
     // Ensure thread pool is initialized with CPU pinning
     let _ = *THREAD_POOL_INITIALIZED;
     
@@ -975,7 +987,7 @@ fn compute_eri_parallel<'py>(
         eri_tensor[[mu, nu, lam, sig]] += val;
     }
     
-    eri_tensor.into_pyarray(py)
+    eri_tensor.into_pyarray(py).into()
 }
 
 /// Compute ERIs with 8-fold symmetry optimization
@@ -988,14 +1000,14 @@ fn compute_eri_parallel<'py>(
 #[pyfunction]
 fn compute_eri_symmetric<'py>(
     py: Python<'py>,
-    coords: PyReadonlyArray2<f64>,
-    exps: PyReadonlyArray1<f64>,
-    norms: PyReadonlyArray1<f64>,
-    lmns: PyReadonlyArray2<i64>,
-    at_idx: PyReadonlyArray1<i64>,
-    bas_idx: PyReadonlyArray1<i64>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
     n_basis: usize,
-) -> &'py PyArray4<f64> {
+) -> Bound<'py, PyArray4<f64>> {
     // Ensure thread pool is initialized with CPU pinning
     let _ = *THREAD_POOL_INITIALIZED;
     
@@ -1119,7 +1131,650 @@ fn compute_eri_symmetric<'py>(
         eri_tensor[[sig, lam, nu, mu]] = val;
     }
     
-    eri_tensor.into_pyarray(py)
+    eri_tensor.into_pyarray(py).into()
+}
+
+// ============================================================================
+// One-Electron Integrals (Overlap & Kinetic)
+// ============================================================================
+
+/// Compute 1D Overlap Integral <(x-xA)^l1 | (x-xB)^l2>
+/// Uses recurrence relation.
+#[inline]
+fn overlap_1d(l1: i32, l2: i32, xa: f64, xb: f64, alpha: f64, beta: f64) -> f64 {
+    let p = alpha + beta;
+    let rp = (alpha * xa + beta * xb) / p;
+    let prefactor = (PI / p).sqrt();
+    
+    // We need up to S[l1][l2].
+    // Since l1, l2 are small, we can use a flattened vector or recursion.
+    // For efficiency, let's use a flattened vector of size (l1+1)*(l2+1).
+    let rows = (l1 + 1) as usize;
+    let cols = (l2 + 1) as usize;
+    let mut s = vec![0.0; rows * cols];
+    
+    // Index helper
+    let idx = |i: usize, j: usize| i * cols + j;
+    
+    s[idx(0, 0)] = prefactor;
+    
+    for i in 0..rows {
+        for j in 0..cols {
+            if i == 0 && j == 0 { continue; }
+            
+            let val;
+            if i > 0 {
+                let term1 = (rp - xa) * s[idx(i-1, j)];
+                let term2 = if i > 1 { (i as f64 - 1.0) * s[idx(i-2, j)] } else { 0.0 };
+                let term3 = if j > 0 { j as f64 * s[idx(i-1, j-1)] } else { 0.0 };
+                val = term1 + (1.0 / (2.0 * p)) * (term2 + term3);
+            } else {
+                // i == 0, so j > 0
+                let term1 = (rp - xb) * s[idx(i, j-1)];
+                let term2 = if i > 0 { i as f64 * s[idx(i-1, j-1)] } else { 0.0 };
+                let term3 = if j > 1 { (j as f64 - 1.0) * s[idx(i, j-2)] } else { 0.0 };
+                val = term1 + (1.0 / (2.0 * p)) * (term2 + term3);
+            }
+            s[idx(i, j)] = val;
+        }
+    }
+    
+    s[idx(l1 as usize, l2 as usize)]
+}
+
+/// Compute 3D Overlap Integral S_ab
+fn overlap_primitive(
+    alpha: f64, beta: f64,
+    a: [f64; 3], b: [f64; 3],
+    la: i32, ma: i32, na: i32,
+    lb: i32, mb: i32, nb: i32,
+    norm_a: f64, norm_b: f64,
+) -> f64 {
+    let p = alpha + beta;
+    let dist2 = dist_squared(&a, &b);
+    let pre = (-alpha * beta / p * dist2).exp();
+    
+    let sx = overlap_1d(la, lb, a[0], b[0], alpha, beta);
+    let sy = overlap_1d(ma, mb, a[1], b[1], alpha, beta);
+    let sz = overlap_1d(na, nb, a[2], b[2], alpha, beta);
+    
+    norm_a * norm_b * pre * sx * sy * sz
+}
+
+/// Compute Kinetic Energy Integral T_ab
+/// T = -0.5 * Laplacian
+fn kinetic_primitive(
+    alpha: f64, beta: f64,
+    a: [f64; 3], b: [f64; 3],
+    la: i32, ma: i32, na: i32,
+    lb: i32, mb: i32, nb: i32,
+    norm_a: f64, norm_b: f64,
+) -> f64 {
+    let p = alpha + beta;
+    let dist2 = dist_squared(&a, &b);
+    let pre = (-alpha * beta / p * dist2).exp();
+    
+    let sx = overlap_1d(la, lb, a[0], b[0], alpha, beta);
+    let sy = overlap_1d(ma, mb, a[1], b[1], alpha, beta);
+    let sz = overlap_1d(na, nb, a[2], b[2], alpha, beta);
+    
+    // Helper for 1D kinetic term
+    let get_term_1d = |l1: i32, l2: i32, x_a: f64, x_b: f64| -> f64 {
+        let s0 = overlap_1d(l1, l2, x_a, x_b, alpha, beta);
+        
+        let t1 = if l2 >= 2 {
+            let s_minus = overlap_1d(l1, l2-2, x_a, x_b, alpha, beta);
+            l2 as f64 * (l2 as f64 - 1.0) * s_minus
+        } else {
+            0.0
+        };
+        
+        let t2 = -2.0 * beta * (2.0 * l2 as f64 + 1.0) * s0;
+        
+        let s_plus = overlap_1d(l1, l2+2, x_a, x_b, alpha, beta);
+        let t3 = 4.0 * beta * beta * s_plus;
+        
+        -0.5 * (t1 + t2 + t3)
+    };
+    
+    let tx = get_term_1d(la, lb, a[0], b[0]);
+    let ty = get_term_1d(ma, mb, a[1], b[1]);
+    let tz = get_term_1d(na, nb, a[2], b[2]);
+    
+    let val = tx * sy * sz + sx * ty * sz + sx * sy * tz;
+    
+    norm_a * norm_b * pre * val
+}
+
+/// Compute Overlap Matrix S
+#[pyfunction]
+fn compute_overlap_matrix<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
+    n_basis: usize,
+) -> Bound<'py, numpy::PyArray2<f64>> {
+    // Ensure thread pool is initialized with CPU pinning
+    let _ = *THREAD_POOL_INITIALIZED;
+    
+    let coords = coords.as_array().to_owned();
+    let exps = exps.as_array().to_owned();
+    let norms = norms.as_array().to_owned();
+    let lmns = lmns.as_array().to_owned();
+    let at_idx = at_idx.as_array().to_owned();
+    let bas_idx = bas_idx.as_array().to_owned();
+    
+    let n_prims = exps.len();
+    
+    // Build primitive index ranges
+    let mut basis_prim_ranges: Vec<(usize, usize)> = Vec::with_capacity(n_basis);
+    let mut current_basis = 0;
+    let mut start_idx = 0;
+    
+    for (idx, &b) in bas_idx.iter().enumerate() {
+        let b = b as usize;
+        if b != current_basis {
+            basis_prim_ranges.push((start_idx, idx));
+            current_basis = b;
+            start_idx = idx;
+        }
+    }
+    basis_prim_ranges.push((start_idx, n_prims));
+    
+    // Generate unique basis pairs (mu, nu) where mu >= nu
+    let unique_pairs: Vec<(usize, usize)> = (0..n_basis)
+        .flat_map(|mu| (0..=mu).map(move |nu| (mu, nu)))
+        .collect();
+    
+    // Compute S matrix elements in parallel
+    let results: Vec<(usize, usize, f64)> = unique_pairs
+        .into_par_iter()
+        .map(|(mu, nu)| {
+            let (i_start, i_end) = basis_prim_ranges[mu];
+            let (j_start, j_end) = basis_prim_ranges[nu];
+            
+            let mut val = 0.0;
+            
+            for i in i_start..i_end {
+                for j in j_start..j_end {
+                    let ai = at_idx[i] as usize;
+                    let aj = at_idx[j] as usize;
+                    
+                    let a = [coords[[ai, 0]], coords[[ai, 1]], coords[[ai, 2]]];
+                    let b = [coords[[aj, 0]], coords[[aj, 1]], coords[[aj, 2]]];
+                    
+                    val += overlap_primitive(
+                        exps[i], exps[j],
+                        a, b,
+                        lmns[[i, 0]] as i32, lmns[[i, 1]] as i32, lmns[[i, 2]] as i32,
+                        lmns[[j, 0]] as i32, lmns[[j, 1]] as i32, lmns[[j, 2]] as i32,
+                        norms[i], norms[j],
+                    );
+                }
+            }
+            (mu, nu, val)
+        })
+        .collect();
+    
+    // Build symmetric matrix
+    let mut s_matrix = ndarray::Array2::<f64>::zeros((n_basis, n_basis));
+    for (mu, nu, val) in results {
+        s_matrix[[mu, nu]] = val;
+        s_matrix[[nu, mu]] = val;
+    }
+    
+    s_matrix.into_pyarray(py).into()
+}
+
+/// Compute Kinetic Energy Matrix T
+#[pyfunction]
+fn compute_kinetic_matrix<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
+    n_basis: usize,
+) -> Bound<'py, numpy::PyArray2<f64>> {
+    // Ensure thread pool is initialized with CPU pinning
+    let _ = *THREAD_POOL_INITIALIZED;
+    
+    let coords = coords.as_array().to_owned();
+    let exps = exps.as_array().to_owned();
+    let norms = norms.as_array().to_owned();
+    let lmns = lmns.as_array().to_owned();
+    let at_idx = at_idx.as_array().to_owned();
+    let bas_idx = bas_idx.as_array().to_owned();
+    
+    let n_prims = exps.len();
+    
+    // Build primitive index ranges
+    let mut basis_prim_ranges: Vec<(usize, usize)> = Vec::with_capacity(n_basis);
+    let mut current_basis = 0;
+    let mut start_idx = 0;
+    
+    for (idx, &b) in bas_idx.iter().enumerate() {
+        let b = b as usize;
+        if b != current_basis {
+            basis_prim_ranges.push((start_idx, idx));
+            current_basis = b;
+            start_idx = idx;
+        }
+    }
+    basis_prim_ranges.push((start_idx, n_prims));
+    
+    let unique_pairs: Vec<(usize, usize)> = (0..n_basis)
+        .flat_map(|mu| (0..=mu).map(move |nu| (mu, nu)))
+        .collect();
+    
+    let results: Vec<(usize, usize, f64)> = unique_pairs
+        .into_par_iter()
+        .map(|(mu, nu)| {
+            let (i_start, i_end) = basis_prim_ranges[mu];
+            let (j_start, j_end) = basis_prim_ranges[nu];
+            
+            let mut val = 0.0;
+            
+            for i in i_start..i_end {
+                for j in j_start..j_end {
+                    let ai = at_idx[i] as usize;
+                    let aj = at_idx[j] as usize;
+                    
+                    let a = [coords[[ai, 0]], coords[[ai, 1]], coords[[ai, 2]]];
+                    let b = [coords[[aj, 0]], coords[[aj, 1]], coords[[aj, 2]]];
+                    
+                    val += kinetic_primitive(
+                        exps[i], exps[j],
+                        a, b,
+                        lmns[[i, 0]] as i32, lmns[[i, 1]] as i32, lmns[[i, 2]] as i32,
+                        lmns[[j, 0]] as i32, lmns[[j, 1]] as i32, lmns[[j, 2]] as i32,
+                        norms[i], norms[j],
+                    );
+                }
+            }
+            (mu, nu, val)
+        })
+        .collect();
+    
+    let mut t_matrix = ndarray::Array2::<f64>::zeros((n_basis, n_basis));
+    for (mu, nu, val) in results {
+        t_matrix[[mu, nu]] = val;
+        t_matrix[[nu, mu]] = val;
+    }
+    
+    t_matrix.into_pyarray(py).into()
+}
+
+// ============================================================================
+// Nuclear Attraction Integrals (Obara-Saika)
+// ============================================================================
+
+/// Context structure for Nuclear Attraction Integral recursion
+struct NuclearContext {
+    /// Gaussian product center P = (alpha*A + beta*B) / (alpha + beta)
+    rp: [f64; 3],
+    /// Nuclear position C
+    rc: [f64; 3],
+    /// Combined exponent: p = alpha + beta
+    p: f64,
+    /// Prefactor: (2*pi/p) * K_ab
+    prefactor: f64,
+    /// Center A coordinates
+    a: [f64; 3],
+    /// Center B coordinates
+    b: [f64; 3],
+    /// Precomputed Boys function values
+    boys_vals: Vec<f64>,
+}
+
+impl NuclearContext {
+    fn new(
+        alpha: f64, beta: f64,
+        a: [f64; 3], b: [f64; 3],
+        c: [f64; 3],
+        l_total: i32,
+    ) -> Self {
+        let p = alpha + beta;
+        let rp = gaussian_product_center(alpha, &a, beta, &b);
+        
+        // Gaussian decay factor K_ab
+        let k_ab = (-alpha * beta / p * dist_squared(&a, &b)).exp();
+        let prefactor = (2.0 * PI / p) * k_ab;
+        
+        // Precompute Boys function values
+        let rpc = [rp[0] - c[0], rp[1] - c[1], rp[2] - c[2]];
+        let rpc_dist2 = rpc[0]*rpc[0] + rpc[1]*rpc[1] + rpc[2]*rpc[2];
+        let t_val = p * rpc_dist2;
+        
+        let mut boys_vals = Vec::with_capacity((l_total + 1) as usize);
+        for n in 0..=l_total {
+            boys_vals.push(boys_function(n, t_val));
+        }
+        
+        NuclearContext {
+            rp, rc: c, p, prefactor, a, b, boys_vals
+        }
+    }
+}
+
+/// Key for nuclear attraction memoization (7 integers packed into u64)
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct NuclearKey(u64);
+
+impl NuclearKey {
+    #[inline]
+    fn new(la: i32, lb: i32, ma: i32, mb: i32, na: i32, nb: i32, m: i32) -> Self {
+        // Pack 7 4-bit values into a u64 (28 bits used)
+        let key = (la as u64 & 0xF)
+            | ((lb as u64 & 0xF) << 4)
+            | ((ma as u64 & 0xF) << 8)
+            | ((mb as u64 & 0xF) << 12)
+            | ((na as u64 & 0xF) << 16)
+            | ((nb as u64 & 0xF) << 20)
+            | ((m as u64 & 0xF) << 24);
+        NuclearKey(key)
+    }
+}
+
+/// Memoized Obara-Saika recurrence for Nuclear Attraction Integrals
+fn nuclear_recursion(
+    la: i32, lb: i32, ma: i32, mb: i32, na: i32, nb: i32,
+    m: i32,
+    ctx: &NuclearContext,
+    cache: &mut HashMap<NuclearKey, f64>,
+) -> f64 {
+    let key = NuclearKey::new(la, lb, ma, mb, na, nb, m);
+    
+    if let Some(&val) = cache.get(&key) {
+        return val;
+    }
+    
+    let p = ctx.p;
+    
+    // Base case: all angular momentum is zero
+    let l_sum = la + lb + ma + mb + na + nb;
+    if l_sum == 0 {
+        let result = ctx.prefactor * ctx.boys_vals[m as usize];
+        cache.insert(key, result);
+        return result;
+    }
+    
+    let result;
+    
+    // X-Axis recurrence: reduce la first
+    if la > 0 {
+        let term1 = (ctx.rp[0] - ctx.a[0]) * nuclear_recursion(la-1, lb, ma, mb, na, nb, m, ctx, cache);
+        let term2 = (ctx.rp[0] - ctx.rc[0]) * nuclear_recursion(la-1, lb, ma, mb, na, nb, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if la > 1 {
+            let val = nuclear_recursion(la-2, lb, ma, mb, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la-2, lb, ma, mb, na, nb, m+1, ctx, cache);
+            term3 = (la - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if lb > 0 {
+            let val = nuclear_recursion(la-1, lb-1, ma, mb, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la-1, lb-1, ma, mb, na, nb, m+1, ctx, cache);
+            term4 = lb as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    // X-Axis: reduce lb
+    else if lb > 0 {
+        let term1 = (ctx.rp[0] - ctx.b[0]) * nuclear_recursion(la, lb-1, ma, mb, na, nb, m, ctx, cache);
+        let term2 = (ctx.rp[0] - ctx.rc[0]) * nuclear_recursion(la, lb-1, ma, mb, na, nb, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if la > 0 {
+            let val = nuclear_recursion(la-1, lb-1, ma, mb, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la-1, lb-1, ma, mb, na, nb, m+1, ctx, cache);
+            term3 = la as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if lb > 1 {
+            let val = nuclear_recursion(la, lb-2, ma, mb, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb-2, ma, mb, na, nb, m+1, ctx, cache);
+            term4 = (lb - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    // Y-Axis: reduce ma
+    else if ma > 0 {
+        let term1 = (ctx.rp[1] - ctx.a[1]) * nuclear_recursion(la, lb, ma-1, mb, na, nb, m, ctx, cache);
+        let term2 = (ctx.rp[1] - ctx.rc[1]) * nuclear_recursion(la, lb, ma-1, mb, na, nb, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if ma > 1 {
+            let val = nuclear_recursion(la, lb, ma-2, mb, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma-2, mb, na, nb, m+1, ctx, cache);
+            term3 = (ma - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if mb > 0 {
+            let val = nuclear_recursion(la, lb, ma-1, mb-1, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma-1, mb-1, na, nb, m+1, ctx, cache);
+            term4 = mb as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    // Y-Axis: reduce mb
+    else if mb > 0 {
+        let term1 = (ctx.rp[1] - ctx.b[1]) * nuclear_recursion(la, lb, ma, mb-1, na, nb, m, ctx, cache);
+        let term2 = (ctx.rp[1] - ctx.rc[1]) * nuclear_recursion(la, lb, ma, mb-1, na, nb, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if ma > 0 {
+            let val = nuclear_recursion(la, lb, ma-1, mb-1, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma-1, mb-1, na, nb, m+1, ctx, cache);
+            term3 = ma as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if mb > 1 {
+            let val = nuclear_recursion(la, lb, ma, mb-2, na, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma, mb-2, na, nb, m+1, ctx, cache);
+            term4 = (mb - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    // Z-Axis: reduce na
+    else if na > 0 {
+        let term1 = (ctx.rp[2] - ctx.a[2]) * nuclear_recursion(la, lb, ma, mb, na-1, nb, m, ctx, cache);
+        let term2 = (ctx.rp[2] - ctx.rc[2]) * nuclear_recursion(la, lb, ma, mb, na-1, nb, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if na > 1 {
+            let val = nuclear_recursion(la, lb, ma, mb, na-2, nb, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma, mb, na-2, nb, m+1, ctx, cache);
+            term3 = (na - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if nb > 0 {
+            let val = nuclear_recursion(la, lb, ma, mb, na-1, nb-1, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma, mb, na-1, nb-1, m+1, ctx, cache);
+            term4 = nb as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    // Z-Axis: reduce nb
+    else if nb > 0 {
+        let term1 = (ctx.rp[2] - ctx.b[2]) * nuclear_recursion(la, lb, ma, mb, na, nb-1, m, ctx, cache);
+        let term2 = (ctx.rp[2] - ctx.rc[2]) * nuclear_recursion(la, lb, ma, mb, na, nb-1, m+1, ctx, cache);
+        
+        let mut term3 = 0.0;
+        if na > 0 {
+            let val = nuclear_recursion(la, lb, ma, mb, na-1, nb-1, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma, mb, na-1, nb-1, m+1, ctx, cache);
+            term3 = na as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        let mut term4 = 0.0;
+        if nb > 1 {
+            let val = nuclear_recursion(la, lb, ma, mb, na, nb-2, m, ctx, cache);
+            let val_m = nuclear_recursion(la, lb, ma, mb, na, nb-2, m+1, ctx, cache);
+            term4 = (nb - 1) as f64 / (2.0 * p) * (val - val_m);
+        }
+        
+        result = term1 - term2 + term3 + term4;
+    }
+    else {
+        result = 0.0;
+    }
+    
+    cache.insert(key, result);
+    result
+}
+
+/// Compute a single primitive nuclear attraction integral
+fn nuclear_primitive(
+    alpha: f64, beta: f64,
+    a: [f64; 3], b: [f64; 3],
+    c: [f64; 3], z: f64,
+    la: i32, ma: i32, na: i32,
+    lb: i32, mb: i32, nb: i32,
+    norm_a: f64, norm_b: f64,
+) -> f64 {
+    let l_total = la + lb + ma + mb + na + nb;
+    
+    let ctx = NuclearContext::new(alpha, beta, a, b, c, l_total);
+    
+    let mut cache = HashMap::new();
+    let val = nuclear_recursion(la, lb, ma, mb, na, nb, 0, &ctx, &mut cache);
+    
+    -z * norm_a * norm_b * val
+}
+
+/// Compute the full nuclear attraction matrix V for a basis set
+/// 
+/// This function computes V[i,j] = sum over nuclei C: (i | -Z_C/r_C | j)
+/// It parallelizes over basis function pairs using Rayon.
+/// 
+/// Parameters:
+/// - coords: atomic coordinates (n_atoms, 3)
+/// - exps: primitive exponents (n_prims,)
+/// - norms: primitive normalization constants (n_prims,)
+/// - lmns: angular momentum (l,m,n) for each primitive (n_prims, 3)
+/// - at_idx: atom index for each primitive (n_prims,)
+/// - bas_idx: basis function index for each primitive (n_prims,)
+/// - n_basis: number of basis functions
+/// - nuclear_charges: atomic numbers for each atom (n_atoms,)
+#[pyfunction]
+fn compute_nuclear_attraction_matrix<'py>(
+    py: Python<'py>,
+    coords: PyReadonlyArray2<'py, f64>,
+    exps: PyReadonlyArray1<'py, f64>,
+    norms: PyReadonlyArray1<'py, f64>,
+    lmns: PyReadonlyArray2<'py, i64>,
+    at_idx: PyReadonlyArray1<'py, i64>,
+    bas_idx: PyReadonlyArray1<'py, i64>,
+    n_basis: usize,
+    nuclear_charges: PyReadonlyArray1<'py, f64>,
+) -> Bound<'py, numpy::PyArray2<f64>> {
+    // Ensure thread pool is initialized with CPU pinning
+    let _ = *THREAD_POOL_INITIALIZED;
+    
+    let coords = coords.as_array().to_owned();
+    let exps = exps.as_array().to_owned();
+    let norms = norms.as_array().to_owned();
+    let lmns = lmns.as_array().to_owned();
+    let at_idx = at_idx.as_array().to_owned();
+    let bas_idx = bas_idx.as_array().to_owned();
+    let nuclear_charges = nuclear_charges.as_array().to_owned();
+    
+    let n_prims = exps.len();
+    let n_atoms = nuclear_charges.len();
+    
+    // Build primitive index ranges for each basis function
+    let mut basis_prim_ranges: Vec<(usize, usize)> = Vec::with_capacity(n_basis);
+    let mut current_basis = 0;
+    let mut start_idx = 0;
+    
+    for (idx, &b) in bas_idx.iter().enumerate() {
+        let b = b as usize;
+        if b != current_basis {
+            basis_prim_ranges.push((start_idx, idx));
+            current_basis = b;
+            start_idx = idx;
+        }
+    }
+    basis_prim_ranges.push((start_idx, n_prims));
+    
+    // Generate unique basis pairs (mu, nu) where mu >= nu (symmetry)
+    let unique_pairs: Vec<(usize, usize)> = (0..n_basis)
+        .flat_map(|mu| (0..=mu).map(move |nu| (mu, nu)))
+        .collect();
+    
+    // Compute nuclear attraction matrix elements in parallel
+    let results: Vec<(usize, usize, f64)> = unique_pairs
+        .into_par_iter()
+        .map(|(mu, nu)| {
+            let (i_start, i_end) = basis_prim_ranges[mu];
+            let (j_start, j_end) = basis_prim_ranges[nu];
+            
+            let mut val = 0.0;
+            
+            // Loop over all primitive pairs for this basis pair
+            for i in i_start..i_end {
+                for j in j_start..j_end {
+                    let ai = at_idx[i] as usize;
+                    let aj = at_idx[j] as usize;
+                    
+                    let a = [coords[[ai, 0]], coords[[ai, 1]], coords[[ai, 2]]];
+                    let b = [coords[[aj, 0]], coords[[aj, 1]], coords[[aj, 2]]];
+                    
+                    let la = lmns[[i, 0]] as i32;
+                    let ma = lmns[[i, 1]] as i32;
+                    let na = lmns[[i, 2]] as i32;
+                    
+                    let lb = lmns[[j, 0]] as i32;
+                    let mb = lmns[[j, 1]] as i32;
+                    let nb = lmns[[j, 2]] as i32;
+                    
+                    // Sum over all nuclei
+                    for k in 0..n_atoms {
+                        let c = [coords[[k, 0]], coords[[k, 1]], coords[[k, 2]]];
+                        let z = nuclear_charges[k];
+                        
+                        val += nuclear_primitive(
+                            exps[i], exps[j],
+                            a, b, c, z,
+                            la, ma, na,
+                            lb, mb, nb,
+                            norms[i], norms[j],
+                        );
+                    }
+                }
+            }
+            
+            (mu, nu, val)
+        })
+        .collect();
+    
+    // Build symmetric matrix
+    let mut v_matrix = ndarray::Array2::<f64>::zeros((n_basis, n_basis));
+    
+    for (mu, nu, val) in results {
+        v_matrix[[mu, nu]] = val;
+        v_matrix[[nu, mu]] = val;  // Symmetric
+    }
+    
+    v_matrix.into_pyarray(py).into()
 }
 
 // ============================================================================
@@ -1201,11 +1856,18 @@ fn scout_initialize_thread_pool() -> bool {
 }
 
 #[pymodule]
-fn qenex_accelerate(_py: Python, m: &PyModule) -> PyResult<()> {
+fn qenex_accelerate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Core ERI functions
     m.add_function(wrap_pyfunction!(compute_eri, m)?)?;
     m.add_function(wrap_pyfunction!(compute_eri_parallel, m)?)?;
     m.add_function(wrap_pyfunction!(compute_eri_symmetric, m)?)?;
+    
+    // Nuclear attraction integral function
+    m.add_function(wrap_pyfunction!(compute_nuclear_attraction_matrix, m)?)?;
+    
+    // Overlap and Kinetic functions
+    m.add_function(wrap_pyfunction!(compute_overlap_matrix, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_kinetic_matrix, m)?)?;
     
     // Scout monitoring functions
     m.add_function(wrap_pyfunction!(scout_get_cache_stats, m)?)?;
@@ -1216,6 +1878,9 @@ fn qenex_accelerate(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scout_get_num_threads, m)?)?;
     m.add_function(wrap_pyfunction!(scout_report, m)?)?;
     m.add_function(wrap_pyfunction!(scout_initialize_thread_pool, m)?)?;
+    
+    // PROMETHEUS UNCHAINED BLAS functions
+    register_prometheus(m)?;
     
     Ok(())
 }

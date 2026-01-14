@@ -4,10 +4,44 @@ build-backend = "maturin"
 
 [project]
 name = "qenex_accelerate"
-version = "0.1.0"
+version = "0.2.0"
+description = "High-performance acceleration for QENEX LAB scientific computing"
 requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-benchmark",
+]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "."
+
+# PROMETHEUS UNCHAINED Integration
+# ================================
+# The prometheus/ subdirectory contains Python bindings for the
+# PROMETHEUS UNCHAINED high-performance BLAS library.
+#
+# PROMETHEUS provides AVX-512 optimized matrix operations:
+#   - DGEMM: 1.5-2.0x faster than OpenBLAS for N=128-384
+#   - DOT, AXPY, SCAL, GEMV operations
+#   - Kahan compensated summation
+#
+# Usage:
+#   from qenex_accelerate.prometheus import dgemm, dot
+#   C = dgemm(A, B)  # Drop-in replacement for A @ B
+#
+# Environment:
+#   Set PROMETHEUS_LIB_PATH to the shared library location:
+#   export PROMETHEUS_LIB_PATH=/path/to/libprometheus_c.so

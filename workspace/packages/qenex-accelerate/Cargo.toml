@@ -1,6 +1,6 @@
 [package]
 name = "qenex_accelerate"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -10,10 +10,15 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.24", features = ["extension-module"] }
 numpy = "0.24"
-ndarray = "0.15"
+ndarray = "0.16"
 rayon = "1.7"  # For parallelization
 core_affinity = "0.8"  # For CPU thread pinning
 once_cell = "1.19"  # For global statistics
+libc = "0.2"  # For PROMETHEUS FFI
+libm = "0.2"  # For high-precision mathematical functions (erf, etc.)
+
+[build-dependencies]
+# For finding PROMETHEUS library at build time (optional)
 
 [profile.release]
 opt-level = 3
