@@ -105,7 +105,64 @@ pytest tests/
 | **qenex-climate**    | Climate           | Atmospheric modeling, climate simulation            |
 | **qenex-neuro**      | Neuroscience      | Neural systems modeling                             |
 | **qenex-qlang**      | Q-Lang            | QENEX LTD's scientific programming language         |
-| **qenex-accelerate** | Performance       | Rust FFI via PyO3/Maturin                           |
+| **qenex-accelerate** | Performance       | Rust FFI + PROMETHEUS AVX-512 BLAS                  |
+
+---
+
+## ⚡ PROMETHEUS UNCHAINED
+
+**PROMETHEUS UNCHAINED** is QENEX LAB's high-performance CPU-only BLAS library, optimized for AVX-512 processors.
+
+### Performance vs OpenBLAS
+
+| Matrix Size | Speedup    | Status     |
+| ----------- | ---------- | ---------- |
+| N=128-256   | 1.5-2.0x   | **WIN** ⭐ |
+| N=320-384   | 1.0-1.1x   | **WIN** ✅ |
+| N=512-768   | 0.96-0.99x | TIE        |
+
+### Usage
+
+```python
+from qenex_accelerate.prometheus import dgemm, dot, axpy
+
+# Matrix multiplication (drop-in replacement for A @ B)
+C = dgemm(A, B)
+
+# Dot product
+result = dot(a, b)
+
+# AXPY: y = alpha * x + y
+axpy(2.0, x, y)
+```
+
+### Integration with qenex_chem
+
+The Hartree-Fock solver automatically uses PROMETHEUS when available:
+
+```python
+from qenex_chem import HartreeFockSolver, Molecule
+
+# PROMETHEUS accelerates:
+# - Fock matrix transformation (X.T @ F @ X)
+# - Density matrix construction (C @ C.T)
+# - MO coefficient transforms
+
+h2 = Molecule([('H', (0, 0, 0)), ('H', (0, 0, 1.4))])
+solver = HartreeFockSolver()
+energy, _ = solver.compute_energy(h2)
+```
+
+### Environment Setup
+
+```bash
+# Set PROMETHEUS library path
+export PROMETHEUS_LIB_PATH=/path/to/libprometheus_c.so
+
+# Build PROMETHEUS (if needed)
+cd /path/to/prometheus-unchained/build
+cmake --build . -j$(nproc)
+```
 
 ---
 
