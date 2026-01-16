@@ -253,8 +253,8 @@
       "name": "qenex-lab",
       "version": "1.2.0",
       "bin": {
+        "qenex": "./bin/opencode",
         "qenex-lab": "./bin/opencode",
-        "opencode": "./bin/opencode",
       },
       "dependencies": {
         "@actions/core": "1.11.1",
