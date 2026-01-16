@@ -36,6 +36,9 @@ import { createTogetherAI } from "@ai-sdk/togetherai"
 import { createPerplexity } from "@ai-sdk/perplexity"
 import { createVercel } from "@ai-sdk/vercel"
 import { ProviderTransform } from "./transform"
+import { createQenexAILocal } from "./qenex-ai-local"
+import { LlamaCppClient } from "./qenex-ai-local/llama-cpp-client"
+import { matchModel, createUnknownModel, QENEX_LOCAL_MODELS } from "./qenex-ai-local/models"
 
 export namespace Provider {
   const log = Log.create({ service: "provider" })
@@ -62,6 +65,9 @@ export namespace Provider {
     "@ai-sdk/vercel": createVercel,
     // @ts-ignore (TODO: kill this code so we dont have to maintain it)
     "@ai-sdk/github-copilot": createGitHubCopilotOpenAICompatible,
+    // QENEX AI Local provider for llama.cpp (only provides language models)
+    // @ts-ignore - QenexAILocalProvider only implements languageModel, not the full Provider interface
+    "@qenex-ai/local": createQenexAILocal,
   }
 
   type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>) => Promise<any>
@@ -460,6 +466,188 @@ export namespace Provider {
         },
       }
     },
+    "qenex-ai-local": async (input) => {
+      // Check for explicit configuration or environment variable
+      const baseURL = Env.get("QENEX_AI_LOCAL_BASE_URL") ?? Env.get("LLAMA_CPP_URL") ?? "http://localhost:8080"
+
+      // Try to connect to llama.cpp server
+      const client = new LlamaCppClient({ baseURL, timeout: 3000 })
+      const available = await client.isAvailable()
+
+      if (!available) {
+        log.info("qenex-ai-local: llama.cpp server not available", { baseURL })
+        return { autoload: false }
+      }
+
+      log.info("qenex-ai-local: llama.cpp server available", { baseURL })
+
+      // Discover models from the server
+      const discovery = await client.discover()
+
+      // Build models from discovery
+      for (const serverModel of discovery.models) {
+        const matched = matchModel(serverModel.id)
+        const modelDef = matched ?? createUnknownModel(serverModel.id, discovery.contextSize)
+
+        input.models[serverModel.id] = {
+          id: serverModel.id,
+          providerID: "qenex-ai-local",
+          name: modelDef.name,
+          family: modelDef.family,
+          api: {
+            id: serverModel.id,
+            url: baseURL,
+            npm: "@qenex-ai/local",
+          },
+          status: "active",
+          headers: {},
+          options: {},
+          cost: {
+            input: 0,
+            output: 0,
+            cache: { read: 0, write: 0 },
+          },
+          limit: {
+            context: modelDef.contextSize,
+            output: modelDef.maxOutput,
+          },
+          capabilities: {
+            temperature: modelDef.temperature,
+            reasoning: modelDef.reasoning,
+            attachment: modelDef.vision,
+            toolcall: modelDef.toolCall,
+            input: {
+              text: true,
+              audio: false,
+              image: modelDef.vision,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          release_date: new Date().toISOString().split("T")[0],
+          variants: {},
+        }
+      }
+
+      // If no models found but server is running, try current model from props
+      if (Object.keys(input.models).length === 0 && discovery.currentModel) {
+        const matched = matchModel(discovery.currentModel)
+        const modelDef = matched ?? createUnknownModel(discovery.currentModel, discovery.contextSize)
+
+        input.models[discovery.currentModel] = {
+          id: discovery.currentModel,
+          providerID: "qenex-ai-local",
+          name: modelDef.name,
+          family: modelDef.family,
+          api: {
+            id: discovery.currentModel,
+            url: baseURL,
+            npm: "@qenex-ai/local",
+          },
+          status: "active",
+          headers: {},
+          options: {},
+          cost: {
+            input: 0,
+            output: 0,
+            cache: { read: 0, write: 0 },
+          },
+          limit: {
+            context: modelDef.contextSize,
+            output: modelDef.maxOutput,
+          },
+          capabilities: {
+            temperature: modelDef.temperature,
+            reasoning: modelDef.reasoning,
+            attachment: modelDef.vision,
+            toolcall: modelDef.toolCall,
+            input: {
+              text: true,
+              audio: false,
+              image: modelDef.vision,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          release_date: new Date().toISOString().split("T")[0],
+          variants: {},
+        }
+      }
+
+      // If still no models, add a default placeholder
+      if (Object.keys(input.models).length === 0) {
+        const defaultModel = QENEX_LOCAL_MODELS["default"]
+        input.models["default"] = {
+          id: "default",
+          providerID: "qenex-ai-local",
+          name: "Local Model",
+          family: "unknown",
+          api: {
+            id: "default",
+            url: baseURL,
+            npm: "@qenex-ai/local",
+          },
+          status: "active",
+          headers: {},
+          options: {},
+          cost: {
+            input: 0,
+            output: 0,
+            cache: { read: 0, write: 0 },
+          },
+          limit: {
+            context: defaultModel.contextSize,
+            output: defaultModel.maxOutput,
+          },
+          capabilities: {
+            temperature: true,
+            reasoning: false,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            interleaved: false,
+          },
+          release_date: new Date().toISOString().split("T")[0],
+          variants: {},
+        }
+      }
+
+      return {
+        autoload: true,
+        options: {
+          baseURL,
+        },
+      }
+    },
   }
 
   export const Model = z
@@ -681,6 +869,16 @@ export namespace Provider {
           },
         })),
       }
+    }
+
+    // Add QENEX AI Local provider for llama.cpp
+    database["qenex-ai-local"] = {
+      id: "qenex-ai-local",
+      name: "QENEX AI Local",
+      source: "custom",
+      env: ["QENEX_AI_LOCAL_BASE_URL", "LLAMA_CPP_URL"],
+      options: {},
+      models: {}, // Models are discovered dynamically by the custom loader
     }
 
     function mergeProvider(providerID: string, provider: Partial<Info>) {

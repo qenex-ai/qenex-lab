@@ -585,6 +585,247 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
   })
 })
 
+describe("ProviderTransform.temperature", () => {
+  const createMockModel = (id: string): any => ({
+    id,
+    providerID: "test",
+    api: { id, url: "", npm: "" },
+    capabilities: {},
+  })
+
+  test("returns 0.55 for qwen models", () => {
+    expect(ProviderTransform.temperature(createMockModel("qwen-72b"))).toBe(0.55)
+    expect(ProviderTransform.temperature(createMockModel("qwen-max"))).toBe(0.55)
+    expect(ProviderTransform.temperature(createMockModel("Qwen-2.5-turbo"))).toBe(0.55)
+  })
+
+  test("returns undefined for claude models", () => {
+    expect(ProviderTransform.temperature(createMockModel("claude-3-5-sonnet"))).toBeUndefined()
+    expect(ProviderTransform.temperature(createMockModel("claude-4-opus"))).toBeUndefined()
+  })
+
+  test("returns 1.0 for gemini models", () => {
+    expect(ProviderTransform.temperature(createMockModel("gemini-3-pro"))).toBe(1.0)
+    expect(ProviderTransform.temperature(createMockModel("gemini-2.5-flash"))).toBe(1.0)
+  })
+
+  test("returns 1.0 for glm-4.6/4.7 models", () => {
+    expect(ProviderTransform.temperature(createMockModel("glm-4.6-turbo"))).toBe(1.0)
+    expect(ProviderTransform.temperature(createMockModel("glm-4.7-turbo"))).toBe(1.0)
+  })
+
+  test("returns 1.0 for minimax-m2 models", () => {
+    expect(ProviderTransform.temperature(createMockModel("minimax-m2"))).toBe(1.0)
+    expect(ProviderTransform.temperature(createMockModel("minimax-m2.1"))).toBe(1.0)
+  })
+
+  test("returns correct values for kimi-k2 models", () => {
+    expect(ProviderTransform.temperature(createMockModel("kimi-k2-thinking"))).toBe(1.0)
+    expect(ProviderTransform.temperature(createMockModel("kimi-k2"))).toBe(0.6)
+    expect(ProviderTransform.temperature(createMockModel("kimi-k2-chat"))).toBe(0.6)
+  })
+
+  test("returns undefined for other models", () => {
+    expect(ProviderTransform.temperature(createMockModel("gpt-4"))).toBeUndefined()
+    expect(ProviderTransform.temperature(createMockModel("llama-4"))).toBeUndefined()
+  })
+})
+
+describe("ProviderTransform.topP", () => {
+  const createMockModel = (id: string): any => ({
+    id,
+    providerID: "test",
+    api: { id, url: "", npm: "" },
+    capabilities: {},
+  })
+
+  test("returns 1 for qwen models", () => {
+    expect(ProviderTransform.topP(createMockModel("qwen-72b"))).toBe(1)
+    expect(ProviderTransform.topP(createMockModel("Qwen-max"))).toBe(1)
+  })
+
+  test("returns 0.95 for minimax-m2 models", () => {
+    expect(ProviderTransform.topP(createMockModel("minimax-m2"))).toBe(0.95)
+    expect(ProviderTransform.topP(createMockModel("minimax-m2.1"))).toBe(0.95)
+  })
+
+  test("returns 0.95 for gemini models", () => {
+    expect(ProviderTransform.topP(createMockModel("gemini-3-pro"))).toBe(0.95)
+    expect(ProviderTransform.topP(createMockModel("gemini-2.5-flash"))).toBe(0.95)
+  })
+
+  test("returns undefined for other models", () => {
+    expect(ProviderTransform.topP(createMockModel("gpt-4"))).toBeUndefined()
+    expect(ProviderTransform.topP(createMockModel("claude-3"))).toBeUndefined()
+  })
+})
+
+describe("ProviderTransform.topK", () => {
+  const createMockModel = (id: string): any => ({
+    id,
+    providerID: "test",
+    api: { id, url: "", npm: "" },
+    capabilities: {},
+  })
+
+  test("returns 40 for minimax-m2.1 models", () => {
+    expect(ProviderTransform.topK(createMockModel("minimax-m2.1"))).toBe(40)
+    expect(ProviderTransform.topK(createMockModel("minimax-m2.1-turbo"))).toBe(40)
+  })
+
+  test("returns 20 for other minimax-m2 models", () => {
+    expect(ProviderTransform.topK(createMockModel("minimax-m2"))).toBe(20)
+    expect(ProviderTransform.topK(createMockModel("minimax-m2-chat"))).toBe(20)
+  })
+
+  test("returns 64 for gemini models", () => {
+    expect(ProviderTransform.topK(createMockModel("gemini-3-pro"))).toBe(64)
+    expect(ProviderTransform.topK(createMockModel("gemini-2.5-flash"))).toBe(64)
+  })
+
+  test("returns undefined for other models", () => {
+    expect(ProviderTransform.topK(createMockModel("gpt-4"))).toBeUndefined()
+    expect(ProviderTransform.topK(createMockModel("claude-3"))).toBeUndefined()
+    expect(ProviderTransform.topK(createMockModel("qwen-72b"))).toBeUndefined()
+  })
+})
+
+describe("ProviderTransform.error", () => {
+  test("adds copilot settings hint for unsupported model error", () => {
+    const error = {
+      message: "The requested model is not supported for this account",
+    } as any
+
+    const result = ProviderTransform.error("github-copilot", error)
+    expect(result).toContain("The requested model is not supported")
+    expect(result).toContain("https://github.com/settings/copilot/features")
+  })
+
+  test("returns original message for other copilot errors", () => {
+    const error = {
+      message: "Rate limit exceeded",
+    } as any
+
+    const result = ProviderTransform.error("github-copilot", error)
+    expect(result).toBe("Rate limit exceeded")
+  })
+
+  test("returns original message for non-copilot providers", () => {
+    const error = {
+      message: "The requested model is not supported for this account",
+    } as any
+
+    const result = ProviderTransform.error("openai", error)
+    expect(result).toBe("The requested model is not supported for this account")
+  })
+})
+
+describe("ProviderTransform.providerOptions", () => {
+  const createMockModel = (npm: string, providerID = "test"): any => ({
+    id: "test-model",
+    providerID,
+    api: { id: "test-model", url: "", npm },
+    capabilities: {},
+  })
+
+  const options = { key: "value" }
+
+  test("wraps with 'openai' for openai providers", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/openai"), options)).toEqual({
+      openai: options,
+    })
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/azure"), options)).toEqual({
+      openai: options,
+    })
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/github-copilot"), options)).toEqual({
+      openai: options,
+    })
+  })
+
+  test("wraps with 'bedrock' for bedrock provider", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/amazon-bedrock"), options)).toEqual({
+      bedrock: options,
+    })
+  })
+
+  test("wraps with 'anthropic' for anthropic provider", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/anthropic"), options)).toEqual({
+      anthropic: options,
+    })
+  })
+
+  test("wraps with 'google' for google providers", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/google"), options)).toEqual({
+      google: options,
+    })
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/google-vertex"), options)).toEqual({
+      google: options,
+    })
+  })
+
+  test("wraps with 'gateway' for gateway provider", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@ai-sdk/gateway"), options)).toEqual({
+      gateway: options,
+    })
+  })
+
+  test("wraps with 'openrouter' for openrouter provider", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@openrouter/ai-sdk-provider"), options)).toEqual({
+      openrouter: options,
+    })
+  })
+
+  test("wraps with providerID for unknown providers", () => {
+    expect(ProviderTransform.providerOptions(createMockModel("@custom/provider", "custom-provider"), options)).toEqual({
+      "custom-provider": options,
+    })
+  })
+})
+
+describe("ProviderTransform.smallOptions", () => {
+  const createMockModel = (providerID: string, apiId: string): any => ({
+    id: `${providerID}/${apiId}`,
+    providerID,
+    api: { id: apiId, url: "", npm: "" },
+    capabilities: {},
+  })
+
+  test("returns reasoningEffort minimal for openai", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("openai", "gpt-4"))
+    expect(result).toEqual({ reasoningEffort: "minimal" })
+  })
+
+  test("returns reasoningEffort low for gpt-5.x models", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("openai", "gpt-5.5"))
+    expect(result).toEqual({ reasoningEffort: "low" })
+  })
+
+  test("returns thinkingConfig for google with gemini-3", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("google", "gemini-3-pro"))
+    expect(result).toEqual({ thinkingConfig: { thinkingLevel: "minimal" } })
+  })
+
+  test("returns thinkingBudget 0 for google with gemini-2.5", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("google", "gemini-2.5-pro"))
+    expect(result).toEqual({ thinkingConfig: { thinkingBudget: 0 } })
+  })
+
+  test("returns reasoning disabled for openrouter google models", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("openrouter", "google/gemini-3"))
+    expect(result).toEqual({ reasoning: { enabled: false } })
+  })
+
+  test("returns reasoningEffort minimal for other openrouter models", () => {
+    const result = ProviderTransform.smallOptions(createMockModel("openrouter", "openai/gpt-4"))
+    expect(result).toEqual({ reasoningEffort: "minimal" })
+  })
+
+  test("returns empty object for other providers", () => {
+    expect(ProviderTransform.smallOptions(createMockModel("anthropic", "claude-3"))).toEqual({})
+    expect(ProviderTransform.smallOptions(createMockModel("mistral", "mistral-large"))).toEqual({})
+  })
+})
+
 describe("ProviderTransform.variants", () => {
   const createMockModel = (overrides: Partial<any> = {}): any => ({
     id: "test/test-model",
