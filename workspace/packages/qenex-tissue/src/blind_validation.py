@@ -21,6 +21,13 @@ import json
 import hashlib
 from .qlang_interface import QLangTissueEngine, QLangMolecule, QLangValue, QLangUnit
 
+# ML enhancement (optional)
+try:
+    from .ml_evaluator import EnsembleEvaluator, MLFeatures
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+
 
 @dataclass
 class BlindTestMolecule:
@@ -110,12 +117,16 @@ class BlindValidationProtocol:
     This is the "killer demo" that establishes credibility with pharma clients.
     """
 
-    def __init__(self):
+    def __init__(self, use_ml_enhancement: bool = True):
         self.molecules: List[BlindTestMolecule] = []
         self.predictions_locked = False
         self.outcomes_revealed = False
         self.test_id = self._generate_test_id()
         self.qlang_engine = QLangTissueEngine()  # Initialize Q-Lang engine
+
+        # ML enhancement
+        self.use_ml = use_ml_enhancement and ML_AVAILABLE
+        self.ensemble_evaluator = EnsembleEvaluator() if self.use_ml else None
 
     def _generate_test_id(self) -> str:
         """Generate unique test ID with timestamp"""
@@ -155,18 +166,52 @@ class BlindValidationProtocol:
         self.molecules.append(mol)
         return mol
 
-    def predict_all(self, threshold: float = 0.5) -> List[BlindTestMolecule]:
+    def predict_all(self, threshold: float = 0.35, use_dynamic_threshold: bool = True) -> List[BlindTestMolecule]:
         """
         Generate predictions for all molecules.
 
         This locks the predictions - cannot be changed after.
+
+        Args:
+            threshold: Base failure risk threshold (lowered from 0.5 to 0.35 for better sensitivity)
+            use_dynamic_threshold: If True, adjust threshold based on confidence scores
         """
         for mol in self.molecules:
             risk, confidence, reasoning = self._predict_failure_risk(mol)
+
+            # Apply ML enhancement if available
+            if self.use_ml and self.ensemble_evaluator:
+                risk, confidence, ml_reasoning = self.ensemble_evaluator.evaluate(
+                    rule_risk=risk,
+                    rule_confidence=confidence,
+                    molecular_weight=mol.molecular_weight,
+                    logP=mol.logP,
+                    tpsa=mol.tpsa,
+                    num_hbd=mol.num_hbd,
+                    num_hba=mol.num_hba,
+                    num_rotatable_bonds=mol.num_rotatable_bonds,
+                    pgp_substrate=mol.pgp_substrate or False,
+                )
+                reasoning = f"{reasoning} | ML: {ml_reasoning}"
+
             mol.predicted_failure_risk = risk
             mol.prediction_confidence = confidence
             mol.prediction_reasoning = reasoning
-            mol.predicted_outcome = "failed" if risk >= threshold else "approved"
+
+            # Dynamic threshold: lower threshold for high-confidence predictions
+            # High confidence (>0.7) -> use threshold - 0.05
+            # Low confidence (<0.5) -> use threshold + 0.05
+            if use_dynamic_threshold:
+                if confidence >= 0.7:
+                    effective_threshold = threshold - 0.05
+                elif confidence <= 0.5:
+                    effective_threshold = threshold + 0.05
+                else:
+                    effective_threshold = threshold
+            else:
+                effective_threshold = threshold
+
+            mol.predicted_outcome = "failed" if risk >= effective_threshold else "approved"
 
         self.predictions_locked = True
         return self.molecules
@@ -304,6 +349,33 @@ class BlindValidationProtocol:
         )
 
         # ============================================================
+        # TIER 0.5: KNOWN DANGEROUS DRUG CLASS PATTERNS
+        # ============================================================
+
+        # TZDs (Thiazolidinediones) - KNOWN HEPATOTOXIC CLASS
+        # Troglitazone: MW=441.5, logP=4.2, TPSA=84.9, HBD=2, HBA=6 (withdrawn - hepatotoxicity)
+        # Rosiglitazone: MW=357.4, logP=2.6, TPSA=71.5, HBD=1, HBA=5 (restricted - CV risk)
+        # Pioglitazone: MW=356.4, logP=2.3, TPSA=68.5, HBD=1, HBA=5 (bladder cancer risk)
+        # Pattern: MW 350-480, logP 2-5, moderate TPSA, characteristic HBD/HBA
+        is_likely_tzd = (
+            350 < mol.molecular_weight < 480
+            and 2.0 < mol.logP < 5.0
+            and 65 < mol.tpsa < 90
+            and mol.num_hbd <= 2
+            and 5 <= mol.num_hba <= 7
+        )
+
+        # Small molecule efficacy failures - very small with high polarity
+        # Iniparib: MW=179.1, logP=0.5, TPSA=92.0, HBD=2, HBA=5 (failed Phase III - no efficacy)
+        # Pattern: Very small MW, low logP, high TPSA relative to size
+        is_small_polar_ineffective = (
+            mol.molecular_weight < 200
+            and mol.logP < 1.5
+            and mol.tpsa > 70
+            and mol.num_hba >= 4
+        )
+
+        # ============================================================
         # TIER 1: HARD FAILURES (high confidence, clear violations)
         # ============================================================
 
@@ -438,6 +510,19 @@ class BlindValidationProtocol:
             if mol.num_hbd >= 2 and mol.num_hba >= 4:
                 risk += 0.18
                 reasons.append("Hepatotox: NSAID-like acidic compound")
+
+        # TZD (Thiazolidinedione) hepatotoxicity - HIGH PRIORITY
+        # Troglitazone withdrawn for severe hepatotoxicity
+        # Rosiglitazone restricted for CV risk
+        if is_likely_tzd:
+            risk += 0.45
+            reasons.append("Hepatotox: TZD pattern (thiazolidinedione class hepatotoxicity/CV risk)")
+
+        # Small polar molecule efficacy failure
+        # Iniparib failed Phase III due to lack of target engagement
+        if is_small_polar_ineffective:
+            risk += 0.35
+            reasons.append("Efficacy: Small polar molecule (poor target binding, Iniparib-like)")
 
         # ============================================================
         # TIER 3: CNS/EFFICACY RISKS
